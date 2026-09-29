@@ -1,0 +1,111 @@
+---
+title: F0.1 — Application Skeleton
+feature: F0.1
+version: V0.1
+phase: "Phase 0 — Project Foundation"
+status: proposed
+tags:
+  - feature-pr
+  - v0-1
+---
+
+# F0.1 — Application Skeleton
+
+[[../releases/v0-1|← V0.1]] · [[../implementation-plan|Plan index]]
+
+## Task PR checklist
+
+- [x] [[#Task PR F0.1.1 — Create project structure|F0.1.1 — Create project structure]]
+- [x] [[#Task PR F0.1.2 — Dependency container|F0.1.2 — Dependency container]]
+- [x] [[#Task PR F0.1.3 — Navigation shell|F0.1.3 — Navigation shell]]
+- [x] [[#Task PR F0.1.4 — Logging infrastructure|F0.1.4 — Logging infrastructure]]
+
+### Task PR F0.1.1 — Create project structure
+
+Create the initial native iOS application.
+
+Suggested modules:
+
+```text
+App
+Core
+Audio
+DSP
+Sessions
+Library
+Features
+    Session
+    Tone
+    Looper
+    Library
+UI
+Tests
+```
+
+Initial dependency direction:
+
+```text
+UI
+ ↓
+Features
+ ↓
+Domain / Sessions
+ ↓
+Audio / DSP
+ ↓
+AVFoundation
+```
+
+Avoid allowing UI code to directly manipulate `AVAudioEngine`.
+
+### Task PR F0.1.2 — Dependency container
+
+Introduce explicit dependency injection.
+
+Example:
+
+```swift
+struct AppDependencies {
+    let audioEngine: AudioEngineProtocol
+    let sessionRepository: SessionRepository
+    let fileStore: AudioFileStore
+}
+```
+
+No service locator or global audio singleton.
+
+### Task PR F0.1.3 — Navigation shell
+
+Implement the primary destinations:
+
+```text
+Session
+Tone
+Library
+```
+
+The Looper destination is introduced in V0.2.
+
+### Task PR F0.1.4 — Logging infrastructure
+
+Add structured logging for:
+
+- audio route changes;
+- audio session state;
+- engine start/stop;
+- recording;
+- file errors;
+- session loading.
+
+Use `Logger` / `os.Logger`.
+
+### Acceptance criteria
+
+- App launches.
+- Navigation works.
+- Core components can be mocked.
+- No actual audio processing yet.
+- Unit-test target exists.
+- CI can build and run tests.
+
+---
