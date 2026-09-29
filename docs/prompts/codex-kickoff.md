@@ -55,6 +55,8 @@ Implement only checked/accepted features in the plan. Follow the documented merg
 
 A checkpoint occurs before asking for human review, approval, a product/scope choice, hardware validation, or merge; when reporting a Task PR/Feature PR/milestone as ready; and at each release gate.
 
+Use the repository's `$ios-feature-validation` skill for checkpoint work. The skill validates an existing implementation; it does not authorize or perform feature implementation.
+
 At every checkpoint, use XcodeBuildMCP to:
 
 1. build the active scheme for the agreed simulator;
@@ -63,7 +65,11 @@ At every checkpoint, use XcodeBuildMCP to:
 4. exercise the changed workflow and capture screenshots of every relevant state;
 5. save screenshots and a checkpoint note under `/docs/snapshots` using [[../snapshots/README|the snapshot convention]].
 
-No checkpoint is ready for human interaction until the build, tests, simulator state, screenshots, and snapshot index are current. If XcodeBuildMCP, the simulator, hardware, or tests are unavailable, do not claim readiness: document the blocker, commands/actions attempted, and remaining validation.
+Check XcodeBuildMCP availability once. If it is unavailable, do not repeatedly retry it. Direct `xcodebuild` and `simctl` results may be recorded as provisional evidence, but they are not an XcodeBuildMCP pass unless the human explicitly waives that gate.
+
+Discover simulator destinations once and retain one simulator identifier throughout the checkpoint. Simulator commands may require host-level access when the restricted environment cannot connect to CoreSimulator. Wait for `bootstatus -b`; a visible Simulator window does not prove that booting or data migration is complete.
+
+No checkpoint is ready for human interaction until the build, tests, simulator state, screenshots, and snapshot index are current. Run the skill's screenshot checker before visual inspection and discard likely Apple boot-screen captures. If XcodeBuildMCP, the simulator, hardware, or tests are unavailable, do not claim readiness: document the blocker, commands/actions attempted, and remaining validation.
 
 At the checkpoint, summarize the scope delivered, PR/commit references, build and test results, simulator/device used, screenshot links, known limitations, and the single next decision or action requested from the human.
 

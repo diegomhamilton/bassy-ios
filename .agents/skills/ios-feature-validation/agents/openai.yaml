@@ -1,0 +1,4 @@
+interface:
+  display_name: "iOS Feature Validation"
+  short_description: "Validate iOS features and capture review evidence"
+  default_prompt: "Use $ios-feature-validation to validate the implemented feature without changing its production code."

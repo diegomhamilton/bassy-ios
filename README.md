@@ -23,6 +23,7 @@ destinations. Open `BassPractice.xcodeproj` in Xcode and run the
 
 - [[docs/plan/implementation-plan|Implementation plan through V0.4]] — review release scope and toggle feature checklists.
 - [[docs/prompts/codex-kickoff|Codex kickoff guideline]] — use this to begin the first implementation session.
+- [iOS feature validation skill](.agents/skills/ios-feature-validation/SKILL.md) — build, test, launch, reject boot-screen captures, and assemble review evidence after implementation.
 - [[docs/prompts/README|Agent prompt rules]] — every prompt crafted for another agent belongs here.
 - [[docs/snapshots/README|Snapshot conventions]] — required evidence at human-review checkpoints.
 - [[docs/snapshots/2026-09-29_F0-1_application-skeleton/README|F0.1 application skeleton checkpoint]] — build, test, and simulator evidence.
@@ -33,7 +34,7 @@ The app begins as a reliable practice and recording tool: select an input and in
 
 ## Working agreement
 
-Implementation is delivered as small Task PRs stacked into Feature PRs. A human-review checkpoint is ready only after XcodeBuildMCP has built and tested the app, launched the simulator, captured the relevant screens, and documented the evidence under `docs/snapshots/`.
+Implementation is delivered as small Task PRs stacked into Feature PRs. Use the repository's `$ios-feature-validation` skill after implementation. A human-review checkpoint is ready only after the required validation route has built and tested the app, launched the simulator, captured verified screens, and documented the evidence under `docs/snapshots/`.
 
 > [!important]
 > Open this folder itself as the Obsidian vault. Keep implementation decisions, agent prompts, and review evidence linked from this home note.

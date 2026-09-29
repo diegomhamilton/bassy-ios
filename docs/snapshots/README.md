@@ -39,11 +39,18 @@ Each checkpoint `README.md` must contain:
 - Commit:
 - Branch / PR:
 - Scheme:
-- Simulator and OS:
+- Validation method: XcodeBuildMCP / direct Xcode tools / human waiver
+- Build and test command or recipe:
+- DerivedData location:
+- Simulator model and OS:
+- Single simulator UDID retained during run: yes/no (do not commit the value)
+- Simulator boot completion confirmed: yes/no
 - Xcode version:
 - XcodeBuildMCP build: pass/fail
 - XcodeBuildMCP tests: pass/fail (count and relevant suite)
+- Direct Xcode build/tests, if used: pass/fail (count and relevant suite)
 - Hardware route, if applicable:
+- Screenshots match reviewed commit: yes/no
 
 ## Scope demonstrated
 
@@ -63,6 +70,12 @@ Each checkpoint `README.md` must contain:
 ## Capture rules
 
 - Use XcodeBuildMCP at every human-interaction checkpoint to build, test, launch, and capture the simulator.
+- Use the repository's `$ios-feature-validation` skill to coordinate checkpoint commands and failure recovery.
+- Check XcodeBuildMCP availability once. If unavailable, label direct Xcode validation as provisional rather than repeatedly retrying the unavailable integration.
+- Reuse one discovered simulator identifier and one stable DerivedData directory throughout the checkpoint.
+- Wait for simulator boot completion before installing or launching the app.
+- Run `.agents/skills/ios-feature-validation/scripts/check_screenshot.swift <image>` on every capture. Exit status `2` rejects a likely Apple boot screen before visual review.
+- Visually inspect checker-accepted images once for the intended state, clipping, stale content, and sensitive information.
 - Capture the changed workflow, empty/loading/error states when relevant, and enough context to identify the screen.
 - Keep screenshots current with the commit presented for review; replace or create a new checkpoint after visual changes.
 - Never include secrets, personal notifications, account data, or unrelated app content.
