@@ -1,5 +1,5 @@
 ---
-title: iOS Bass App
+title: iOS Bassy App
 aliases:
   - Bass App Project Home
 tags:
@@ -8,7 +8,7 @@ tags:
   - project
 ---
 
-# iOS Bass App
+# iOS Bassy App
 
 An Obsidian-ready project vault for a native iOS practice and recording app for bass and guitar.
 
