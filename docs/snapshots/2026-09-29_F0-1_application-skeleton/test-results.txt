@@ -1,0 +1,11 @@
+Scheme: BassPractice
+Destination: iPhone 17 Pro (iOS 26.2)
+Tool: xcodebuild (XcodeBuildMCP unavailable)
+Result: TEST SUCCEEDED
+
+AppDependenciesTests.testDependenciesCanBeReplacedWithTestDoubles: passed
+AppDependenciesTests.testInitialDestinationDefaultsToSession: passed
+AppDependenciesTests.testInitialDestinationReadsLaunchArgument: passed
+
+Result bundle:
+/tmp/BassPracticeDerivedData/Logs/Test/Test-BassPractice-2026.09.29_01-13-02--0300.xcresult

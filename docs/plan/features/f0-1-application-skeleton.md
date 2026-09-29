@@ -3,7 +3,7 @@ title: F0.1 — Application Skeleton
 feature: F0.1
 version: V0.1
 phase: "Phase 0 — Project Foundation"
-status: proposed
+status: awaiting-review
 tags:
   - feature-pr
   - v0-1
@@ -107,5 +107,13 @@ Use `Logger` / `os.Logger`.
 - No actual audio processing yet.
 - Unit-test target exists.
 - CI can build and run tests.
+
+### Implementation evidence
+
+- Local implementation commit: `a9dc2a0`
+- Build: passed with Xcode 26.2 on the iPhone 17 Pro simulator.
+- Tests: 3 passed in `AppDependenciesTests`.
+- Simulator states: [[../../snapshots/2026-09-29_F0-1_application-skeleton/README|F0.1 checkpoint]].
+- Remaining gate: XcodeBuildMCP validation is blocked because the integration was not available in the implementation task.
 
 ---
