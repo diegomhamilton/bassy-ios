@@ -113,6 +113,7 @@ Use `Logger` / `os.Logger`.
 - Local implementation commit: `a9dc2a0`
 - Build: passed with Xcode 26.2 on the iPhone 17 Pro simulator.
 - Tests: 3 passed in `AppDependenciesTests`.
+- CI: `.github/workflows/ios.yml` builds and tests pull requests and `main` pushes.
 - Simulator states: [[../../snapshots/2026-09-29_F0-1_application-skeleton/README|F0.1 checkpoint]].
 - Remaining gate: XcodeBuildMCP validation is blocked because the integration was not available in the implementation task.
 
