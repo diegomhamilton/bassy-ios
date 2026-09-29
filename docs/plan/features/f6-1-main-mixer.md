@@ -26,7 +26,6 @@ Channels:
 
 ```text
 Instrument
-Backing Track
 Playback
 ```
 
@@ -54,6 +53,6 @@ clipping
 
 ## Feature acceptance criteria
 
-User can balance live bass and backing music without modifying recorded signal levels.
+User can balance live bass and recording playback without modifying recorded signal levels.
 
 ---

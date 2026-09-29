@@ -1,17 +1,17 @@
 ---
 title: F16.2 — Solo and Routing Controls
 feature: F16.2
-version: V0.4
+version: Backlog
 phase: "Phase 16 — Advanced Practice Features"
 status: proposed
 tags:
   - feature-pr
-  - v0-4
+  - backlog
 ---
 
 # F16.2 — Solo and Routing Controls
 
-[[../releases/v0-4|← V0.4]] · [[../implementation-plan|Plan index]]
+[[../releases/backlog|← Backlog]] · [[../implementation-plan|Plan index]]
 
 ## Task PR checklist
 

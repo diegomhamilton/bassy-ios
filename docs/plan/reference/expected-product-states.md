@@ -29,7 +29,6 @@ The application is a reliable basic looping practice tool:
                      │           │           │
                      └───────────┼───────────┘
                                  │
-BACKING TRACK ───────────────────┤
                                  ▼
                               MIXER
                                  │
@@ -53,7 +52,7 @@ Instrument ────────┐
                    ├── Recording tap ── Instrument recording
                    │
                    ▼
-             Playback mixer ◄── Backing track
+             Playback mixer
                    ▲
                    ├── Loops
                    └── Metronome
@@ -67,6 +66,25 @@ The metronome is available during playback and practice but is never captured in
 ---
 
 # Expected state at the end of V0.4
+
+The application adds imported backing tracks to its existing practice workflow:
+
+```text
+Imported audio file
+       ↓
+Managed session asset
+       ↓
+Backing-track player ──┐
+                       ├── Playback mixer ── Output
+Instrument / loops ────┤
+Metronome ─────────────┘
+```
+
+The user can import, play, pause, seek, mix, save, and restore a backing track.
+
+---
+
+# Expected state at the end of V0.5
 
 The application is a more complete practice workstation:
 
@@ -86,7 +104,7 @@ The application is a more complete practice workstation:
                                  │
                      ┌───────────┼───────────┐
                      ▼           ▼           ▼
-              EDITABLE LOOP  EDITABLE LOOP  EDITABLE LOOP
+                   Loop 1      Loop 2      Loop N
                      │           │           │
                      └───────────┼───────────┘
                                  │
@@ -102,7 +120,7 @@ METRONOME ───────────────────────�
                          EXPORT / SHARE
 ```
 
-V0.4 improves control and workflow without changing the core separation between live input, recording, playback, looping, and metronome routing.
+V0.5 improves control, reliability, diagnostics, and export without changing the core separation between live input, recording, playback, looping, and metronome routing.
 
 One thing I’d strongly preserve from this plan is **F8.1 Shared Transport before implementing the looper**. It may seem like extra infrastructure, but it prevents the classic situation where backing tracks, recordings, and loops each develop their own notion of time and synchronization becomes a rewrite later.
 

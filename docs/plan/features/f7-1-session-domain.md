@@ -31,8 +31,6 @@ struct MusicSession {
     var inputProfileID: UUID?
     var effectPresetID: UUID?
 
-    var backingTrack: BackingTrack?
-
     var recordings: [Recording]
     var loops: [Loop]
 

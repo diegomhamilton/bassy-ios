@@ -75,19 +75,25 @@ For V0.4:
 
 ```text
 STREAM A
+Track import and managed file storage
+
+STREAM B
+Backing-track playback and controls
+```
+
+For V0.5:
+
+```text
+STREAM A
 Advanced tone UX
 
 STREAM B
-Advanced loop editing
+Audio recovery and diagnostics
 
 STREAM C
-Practice features
-
-STREAM D
-Diagnostics and export
+Audio export
 ```
 
 Avoid parallelizing changes to the actual `AVAudioEngine` graph until its topology is stable.
 
 ---
-

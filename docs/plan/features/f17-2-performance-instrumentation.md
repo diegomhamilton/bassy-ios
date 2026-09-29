@@ -1,17 +1,17 @@
 ---
 title: F17.2 — Performance Instrumentation
 feature: F17.2
-version: V0.4
+version: V0.5
 phase: "Phase 17 — Reliability and Diagnostics"
 status: proposed
 tags:
   - feature-pr
-  - v0-4
+  - v0-5
 ---
 
 # F17.2 — Performance Instrumentation
 
-[[../releases/v0-4|← V0.4]] · [[../implementation-plan|Plan index]]
+[[../releases/v0-5|← V0.5]] · [[../implementation-plan|Plan index]]
 
 ## Task PR checklist
 

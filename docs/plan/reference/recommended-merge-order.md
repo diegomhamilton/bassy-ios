@@ -28,13 +28,8 @@ F2.1 Profiles   F3.1 Gain
                 ▼
               F3.3 Effect Chain
                 │
- ┌──────────────┴───────────────┐
- ▼                              ▼
-F4.1 Recording               F5.1 Import
-                                │
-                                ▼
-                             F5.2 Playback
- └──────────────┬───────────────┘
+                ▼
+             F4.1 Recording
                 ▼
              F6.1 Mixer
                 │
@@ -83,17 +78,25 @@ F4.1 Recording               F5.1 Import
                 │
              V0.3
                 │
-       ┌────────┼─────────┬─────────┐
-       ▼        ▼         ▼         ▼
-   F14 Tone  F15 Loops  F16 Practice F17 Reliability
-       │        │         │         │
-       └────────┴─────────┴─────────┘
-                    │
-                    ▼
-                 F18 Export
-                    │
-                 V0.4
+                ▼
+             F5.1 Import
+                │
+                ▼
+             F5.2 Playback
+                │
+             V0.4
+                │
+       ┌────────┴─────────┐
+       ▼                  ▼
+   F14 Tone          F17 Reliability
+       │                  │
+       └────────┬─────────┘
+                ▼
+             F18 Export
+                │
+             V0.5
 ```
 
----
+Unscheduled F15 advanced loop editing and F16 advanced practice features remain in [[../releases/backlog|Backlog]].
 
+---

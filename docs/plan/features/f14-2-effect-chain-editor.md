@@ -1,17 +1,17 @@
 ---
 title: F14.2 — Effect Chain Editor
 feature: F14.2
-version: V0.4
+version: V0.5
 phase: "Phase 14 — Advanced Tone Preset UX"
 status: proposed
 tags:
   - feature-pr
-  - v0-4
+  - v0-5
 ---
 
 # F14.2 — Effect Chain Editor
 
-[[../releases/v0-4|← V0.4]] · [[../implementation-plan|Plan index]]
+[[../releases/v0-5|← V0.5]] · [[../implementation-plan|Plan index]]
 
 ## Task PR checklist
 

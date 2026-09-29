@@ -11,16 +11,18 @@ status: proposed
 
 # iOS Bass App — Implementation Plan
 
-This is the review index for the V0.1–V0.4 plan. Review release scope first, then open individual Feature PR notes for atomic task and acceptance-criteria review.
+This is the review index for the V0.1–V0.5 plan. Review release scope first, then open individual Feature PR notes for atomic task and acceptance-criteria review.
 
 ## Release scope
 
 - [[releases/v0-1|V0.1 — Play, Process, Record]]
 - [[releases/v0-2|V0.2 — Basic Looper]]
 - [[releases/v0-3|V0.3 — Metronome and Practice Timing]]
-- [[releases/v0-4|V0.4 — Advanced Practice and Workflow]]
+- [[releases/v0-4|V0.4 — Backing Tracks]]
+- [[releases/v0-5|V0.5 — Workflow, Reliability, and Export]]
+- [[releases/backlog|Backlog — Unscheduled features]]
 
-Each release file contains checked-by-default feature scope. Uncheck a feature to propose removing or deferring it.
+Each versioned release file contains checked-by-default feature scope. Uncheck a feature to propose moving it to Backlog.
 
 ## Delivery and architecture
 

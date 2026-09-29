@@ -38,7 +38,7 @@ no accent
 
 ## Task PR F13.3.5 — Metronome volume
 
-Metronome volume is independent from instrument, backing-track, and loop volume.
+Metronome volume is independent from instrument and loop volume.
 
 ## Feature acceptance criteria
 

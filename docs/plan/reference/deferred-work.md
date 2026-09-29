@@ -7,7 +7,7 @@ tags: [planning, reference]
 
 # Deferred Work Summary
 
-The following items are intentionally moved out of V0.2:
+The following items were intentionally deferred from earlier releases during scope review:
 
 ## Moved to V0.3
 
@@ -22,14 +22,26 @@ The following items are intentionally moved out of V0.2:
 
 ## Moved to V0.4
 
+- backing-track import;
+- managed backing-track files;
+- backing-track playback, transport, and gain;
+- backing-track session restoration.
+
+## Moved to V0.5
+
 - tone preset library management;
 - generic effect-chain editor;
 - advanced processor parameter editing;
+- user-facing diagnostics;
+- audio export and sharing.
+
+## Backlog
+
 - solo controls;
 - loop revision history;
 - undo and redo for overdubs;
 - loop trimming and cropping;
-- loop duplication and export;
+- loop duplication;
 - quantized loop recording;
 - selectable loop lengths;
 - tempo changes;
@@ -38,13 +50,11 @@ The following items are intentionally moved out of V0.2:
 - practice sections;
 - playback speed control;
 - dry/wet recording options;
-- advanced routing;
-- user-facing diagnostics;
-- audio export and sharing.
+- advanced routing.
 
 ## Kept as ongoing engineering work
 
-These should not wait for V0.4 if they are needed for stability:
+These foundations should not wait for their complete V0.5 user-facing features if they are needed for stability:
 
 - USB disconnect recovery;
 - route-change recovery;
@@ -55,4 +65,3 @@ These should not wait for V0.4 if they are needed for stability:
 - automated tests for recording-path separation.
 
 ---
-

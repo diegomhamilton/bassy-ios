@@ -36,7 +36,6 @@ Recording tap
     ↓
 Instrument mixer ─────┐
                       ├── Output
-Backing track ────────┤
 Loops ────────────────┤
 Metronome ────────────┘
 ```

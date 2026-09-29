@@ -26,7 +26,6 @@ Show:
 ```text
 Name
 Date
-Backing track
 Number of recordings
 ```
 
@@ -37,7 +36,6 @@ Restore:
 ```text
 instrument profile
 effect preset
-backing track
 recordings
 mixer levels
 ```

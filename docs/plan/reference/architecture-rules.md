@@ -1,11 +1,11 @@
 ---
-title: Architecture Rule for V0.1–V0.4
+title: Architecture Rule for V0.1–V0.5
 tags: [planning, reference]
 ---
 
 [[../implementation-plan|← Plan index]]
 
-# Architecture Rule for V0.1–V0.4
+# Architecture Rule for V0.1–V0.5
 
 One principle should remain strict:
 
@@ -74,4 +74,3 @@ Metronome ────────────────┤
 This boundary will become particularly valuable when future versions introduce custom DSP, amp transfer functions, cabinet simulation, and more advanced routing.
 
 ---
-

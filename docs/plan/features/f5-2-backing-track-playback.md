@@ -1,17 +1,17 @@
 ---
 title: F5.2 — Backing Track Playback
 feature: F5.2
-version: V0.1
+version: V0.4
 phase: "Phase 5 — Backing Tracks"
 status: proposed
 tags:
   - feature-pr
-  - v0-1
+  - v0-4
 ---
 
 # F5.2 — Backing Track Playback
 
-[[../releases/v0-1|← V0.1]] · [[../implementation-plan|Plan index]]
+[[../releases/v0-4|← V0.4]] · [[../implementation-plan|Plan index]]
 
 ## Task PR checklist
 
@@ -32,7 +32,7 @@ to the audio graph.
 
 ## Task PR F5.2.2 — Transport
 
-Implement:
+Join the shared transport introduced in F8.1 and implement:
 
 ```text
 play

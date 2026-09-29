@@ -1,17 +1,17 @@
 ---
 title: F15.2 — Loop Editing Tools
 feature: F15.2
-version: V0.4
+version: Backlog
 phase: "Phase 15 — Advanced Loop Editing"
 status: proposed
 tags:
   - feature-pr
-  - v0-4
+  - backlog
 ---
 
 # F15.2 — Loop Editing Tools
 
-[[../releases/v0-4|← V0.4]] · [[../implementation-plan|Plan index]]
+[[../releases/backlog|← Backlog]] · [[../implementation-plan|Plan index]]
 
 ## Task PR checklist
 

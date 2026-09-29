@@ -18,7 +18,6 @@ tags:
 - [x] [[#Task PR F8.1.1 — Transport clock|F8.1.1 — Transport clock]]
 - [x] [[#Task PR F8.1.2 — Transport states|F8.1.2 — Transport states]]
 - [x] [[#Task PR F8.1.3 — Scheduled playback|F8.1.3 — Scheduled playback]]
-- [x] [[#Task PR F8.1.4 — Backing-track integration|F8.1.4 — Backing-track integration]]
 
 ## Task PR F8.1.1 — Transport clock
 
@@ -47,12 +46,8 @@ enum TransportState {
 
 Enable sample-accurate scheduling where practical.
 
-## Task PR F8.1.4 — Backing-track integration
-
-Use the shared transport for backing-track playback where this can be done without destabilizing V0.1 behavior.
-
 ## Feature acceptance criteria
 
-Backing tracks and loops can use one timing system without audible scheduling gaps.
+Loops use one timing system without audible scheduling gaps, and future playback sources can join the same timeline.
 
 ---
