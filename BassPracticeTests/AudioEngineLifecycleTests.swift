@@ -20,6 +20,130 @@ struct AudioEngineLifecycleTests {
         #expect(recorder.commands == Fixtures.startCommands)
     }
 
+    @Test(
+        "Start rebuilds the exact input-to-instrument-to-main-to-output graph for supported hardware formats",
+        arguments: Fixtures.validInputFormats
+    )
+    fileprivate func startBuildsGraphForHardwareFormat(
+        testCase: Fixtures.InputFormatCase
+    ) async throws {
+        // Arrange
+        let recorder = TestDoubles.CommandRecorder()
+        let engine = TestDoubles.AudioEngineBackend(
+            recorder: recorder,
+            inputFormat: testCase.format
+        )
+        let control = AudioControlActor(
+            backend: TestDoubles.AudioSessionBackend(recorder: recorder),
+            engineBackend: engine
+        )
+
+        // Act
+        try await control.start()
+
+        // Assert
+        #expect(recorder.commands == Fixtures.startCommands(for: testCase.format))
+        #expect(await control.state == .running)
+    }
+
+    @Test(
+        "Start rejects invalid hardware input formats before changing the graph",
+        arguments: Fixtures.invalidInputFormats
+    )
+    fileprivate func startRejectsInvalidInputFormat(
+        testCase: Fixtures.InputFormatCase
+    ) async {
+        // Arrange
+        let recorder = TestDoubles.CommandRecorder()
+        let control = AudioControlActor(
+            backend: TestDoubles.AudioSessionBackend(recorder: recorder),
+            engineBackend: TestDoubles.AudioEngineBackend(
+                recorder: recorder,
+                inputFormat: testCase.format
+            )
+        )
+        let expectedFailure = AudioEngineFailure.invalidInputFormat(
+            sampleRate: testCase.format.sampleRate,
+            channelCount: testCase.format.channelCount
+        )
+        var receivedFailure: AudioEngineFailure?
+
+        // Act
+        do {
+            try await control.start()
+        } catch {
+            receivedFailure = error
+        }
+
+        // Assert
+        #expect(receivedFailure == expectedFailure)
+        #expect(await control.state == .failed(expectedFailure))
+        #expect(recorder.commands == Fixtures.sessionActivationCommands + [
+            .engineReadInputFormat(
+                sampleRate: testCase.format.sampleRate,
+                channelCount: testCase.format.channelCount
+            ),
+            .engineStop,
+            .sessionDeactivate
+        ])
+    }
+
+    @Test(
+        "Every graph operation failure stops the engine, deactivates the session, and publishes a typed failure",
+        arguments: Fixtures.graphFailurePoints
+    )
+    fileprivate func graphFailuresCleanUp(
+        failurePoint: TestDoubles.AudioEngineBackend.FailurePoint
+    ) async {
+        // Arrange
+        let recorder = TestDoubles.CommandRecorder()
+        let engine = TestDoubles.AudioEngineBackend(
+            recorder: recorder,
+            failure: failurePoint
+        )
+        let control = AudioControlActor(
+            backend: TestDoubles.AudioSessionBackend(recorder: recorder),
+            engineBackend: engine
+        )
+        var receivedFailure: AudioEngineFailure?
+
+        // Act
+        do {
+            try await control.start()
+        } catch {
+            receivedFailure = error
+        }
+
+        // Assert
+        #expect(receivedFailure == .graphConfigurationFailed)
+        #expect(await control.state == .failed(.graphConfigurationFailed))
+        #expect(recorder.commands == Fixtures.commandsForGraphFailure(at: failurePoint))
+    }
+
+    @Test("Restart rebuilds the graph once without duplicate attach or connection operations")
+    func restartRebuildsGraphWithoutDuplicateOperations() async throws {
+        // Arrange
+        let recorder = TestDoubles.CommandRecorder()
+        let engine = TestDoubles.AudioEngineBackend(recorder: recorder)
+        let control = AudioControlActor(
+            backend: TestDoubles.AudioSessionBackend(recorder: recorder),
+            engineBackend: engine
+        )
+
+        // Act
+        try await control.start()
+        try await control.stop()
+        try await control.start()
+
+        // Assert
+        #expect(engine.resetCount == 2)
+        #expect(engine.attachCount == 2)
+        #expect(engine.inputConnectionCount == 2)
+        #expect(engine.instrumentConnectionCount == 2)
+        #expect(engine.outputConnectionCount == 2)
+        #expect(await control.state == .running)
+    }
+
     @Test("Repeated start and stop calls are idempotent")
     func repeatedLifecycleCallsAreIdempotent() async throws {
         // Arrange
@@ -140,6 +264,44 @@ private enum Fixtures {
         var testDescription: String { description }
     }
 
+    struct InputFormatCase: Sendable, CustomTestStringConvertible {
+        let description: String
+        let format: AudioEngineInputFormat
+
+        var testDescription: String { description }
+    }
+
+    static let defaultInputFormat = AudioEngineInputFormat(
+        sampleRate: 48_000,
+        channelCount: 1
+    )
+
+    static let validInputFormats = [
+        InputFormatCase(
+            description: "44.1 kHz mono",
+            format: AudioEngineInputFormat(sampleRate: 44_100, channelCount: 1)
+        ),
+        InputFormatCase(
+            description: "48 kHz stereo",
+            format: AudioEngineInputFormat(sampleRate: 48_000, channelCount: 2)
+        ),
+        InputFormatCase(
+            description: "96 kHz mono",
+            format: AudioEngineInputFormat(sampleRate: 96_000, channelCount: 1)
+        )
+    ]
+
+    static let invalidInputFormats = [
+        InputFormatCase(
+            description: "zero sample rate",
+            format: AudioEngineInputFormat(sampleRate: 0, channelCount: 1)
+        ),
+        InputFormatCase(
+            description: "zero channels",
+            format: AudioEngineInputFormat(sampleRate: 48_000, channelCount: 0)
+        )
+    ]
+
     static let sessionActivationCommands: [TestDoubles.Command] = [
         .sessionConfigure,
         .sessionPreferredSampleRate(48_000),
@@ -148,9 +310,57 @@ private enum Fixtures {
     ]
 
     static let startCommands = sessionActivationCommands + [
+        .engineReadInputFormat(sampleRate: 48_000, channelCount: 1),
+        .engineResetGraph,
+        .engineAttachInstrumentMixer,
+        .engineConnectInputToInstrument(sampleRate: 48_000, channelCount: 1),
+        .engineConnectInstrumentToMain,
+        .engineConnectMainToOutput,
         .enginePrepare,
         .engineStart
     ]
+
+    static func startCommands(for format: AudioEngineInputFormat) -> [TestDoubles.Command] {
+        sessionActivationCommands + graphCommands(for: format) + [
+            .enginePrepare,
+            .engineStart
+        ]
+    }
+
+    static func graphCommands(for format: AudioEngineInputFormat) -> [TestDoubles.Command] {
+        [
+            .engineReadInputFormat(
+                sampleRate: format.sampleRate,
+                channelCount: format.channelCount
+            ),
+            .engineResetGraph,
+            .engineAttachInstrumentMixer,
+            .engineConnectInputToInstrument(
+                sampleRate: format.sampleRate,
+                channelCount: format.channelCount
+            ),
+            .engineConnectInstrumentToMain,
+            .engineConnectMainToOutput
+        ]
+    }
+
+    static let graphFailurePoints: [TestDoubles.AudioEngineBackend.FailurePoint] = [
+        .resetGraph,
+        .attachInstrumentMixer,
+        .connectInputToInstrument,
+        .connectInstrumentToMain,
+        .connectMainToOutput
+    ]
+
+    static func commandsForGraphFailure(
+        at failurePoint: TestDoubles.AudioEngineBackend.FailurePoint
+    ) -> [TestDoubles.Command] {
+        let graphCommands = graphCommands(for: defaultInputFormat)
+        let failingCommandIndex = failurePoint.graphCommandIndex
+        return sessionActivationCommands
+            + Array(graphCommands.prefix(failingCommandIndex + 1))
+            + [.engineStop, .sessionDeactivate]
+    }
 
     static let lifecycleCommands = startCommands + [
         .engineStop,
@@ -168,7 +378,8 @@ private enum Fixtures {
             description: "engine preparation",
             failure: .enginePreparation,
             expectedFailure: .preparationFailed,
-            expectedCommands: sessionActivationCommands + [
+            expectedCommands: sessionActivationCommands
+                + graphCommands(for: defaultInputFormat) + [
                 .enginePrepare,
                 .engineStop,
                 .sessionDeactivate
@@ -193,6 +404,12 @@ private enum TestDoubles {
         case sessionPreferredBufferDuration(TimeInterval)
         case sessionActivate
         case sessionDeactivate
+        case engineReadInputFormat(sampleRate: Double, channelCount: UInt32)
+        case engineResetGraph
+        case engineAttachInstrumentMixer
+        case engineConnectInputToInstrument(sampleRate: Double, channelCount: UInt32)
+        case engineConnectInstrumentToMain
+        case engineConnectMainToOutput
         case enginePrepare
         case engineStart
         case engineStop
@@ -268,8 +485,24 @@ private enum TestDoubles {
 
     final class AudioEngineBackend: BassPractice.AudioEngineBackend, @unchecked Sendable {
         enum FailurePoint: Equatable, Sendable {
+            case resetGraph
+            case attachInstrumentMixer
+            case connectInputToInstrument
+            case connectInstrumentToMain
+            case connectMainToOutput
             case prepare
             case start
+
+            var graphCommandIndex: Int {
+                switch self {
+                case .resetGraph: 1
+                case .attachInstrumentMixer: 2
+                case .connectInputToInstrument: 3
+                case .connectInstrumentToMain: 4
+                case .connectMainToOutput: 5
+                case .prepare, .start: preconditionFailure("Not a graph failure point")
+                }
+            }
         }
 
         enum Failure: Error {
@@ -278,10 +511,67 @@ private enum TestDoubles {
 
         private let recorder: CommandRecorder
         private let failure: FailurePoint?
+        private let format: AudioEngineInputFormat
+        private let lock = NSLock()
+        private var graphResetCount = 0
+        private var mixerAttachCount = 0
+        private var inputConnectCount = 0
+        private var instrumentConnectCount = 0
+        private var outputConnectCount = 0
 
-        init(recorder: CommandRecorder, failure: FailurePoint? = nil) {
+        var inputFormat: AudioEngineInputFormat {
+            recorder.append(.engineReadInputFormat(
+                sampleRate: format.sampleRate,
+                channelCount: format.channelCount
+            ))
+            return format
+        }
+
+        var resetCount: Int { lock.withLock { graphResetCount } }
+        var attachCount: Int { lock.withLock { mixerAttachCount } }
+        var inputConnectionCount: Int { lock.withLock { inputConnectCount } }
+        var instrumentConnectionCount: Int { lock.withLock { instrumentConnectCount } }
+        var outputConnectionCount: Int { lock.withLock { outputConnectCount } }
+
+        init(
+            recorder: CommandRecorder,
+            inputFormat: AudioEngineInputFormat = Fixtures.defaultInputFormat,
+            failure: FailurePoint? = nil
+        ) {
             self.recorder = recorder
+            format = inputFormat
             self.failure = failure
+        }
+
+        func resetGraph() throws {
+            try record(.engineResetGraph, failurePoint: .resetGraph)
+            lock.withLock { graphResetCount += 1 }
+        }
+
+        func attachInstrumentMixer() throws {
+            try record(.engineAttachInstrumentMixer, failurePoint: .attachInstrumentMixer)
+            lock.withLock { mixerAttachCount += 1 }
+        }
+
+        func connectInputToInstrument(format: AudioEngineInputFormat) throws {
+            try record(
+                .engineConnectInputToInstrument(
+                    sampleRate: format.sampleRate,
+                    channelCount: format.channelCount
+                ),
+                failurePoint: .connectInputToInstrument
+            )
+            lock.withLock { inputConnectCount += 1 }
+        }
+
+        func connectInstrumentToMain() throws {
+            try record(.engineConnectInstrumentToMain, failurePoint: .connectInstrumentToMain)
+            lock.withLock { instrumentConnectCount += 1 }
+        }
+
+        func connectMainToOutput() throws {
+            try record(.engineConnectMainToOutput, failurePoint: .connectMainToOutput)
+            lock.withLock { outputConnectCount += 1 }
         }
 
         func prepare() throws {
@@ -300,6 +590,13 @@ private enum TestDoubles {
 
         func stop() {
             recorder.append(.engineStop)
+        }
+
+        private func record(_ command: Command, failurePoint: FailurePoint) throws {
+            recorder.append(command)
+            if failure == failurePoint {
+                throw Failure.requested
+            }
         }
     }
 }

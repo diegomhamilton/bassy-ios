@@ -95,6 +95,15 @@ actor AudioControlActor: AudioSessionManaging, AudioEngineProtocol {
         }
 
         do {
+            try configureGraph()
+        } catch let failure {
+            engineBackend.stop()
+            deactivateAfterFailedStart()
+            state = .failed(failure)
+            throw failure
+        }
+
+        do {
             try engineBackend.prepare()
         } catch {
             let failure = AudioEngineFailure.preparationFailed
@@ -115,6 +124,26 @@ actor AudioControlActor: AudioSessionManaging, AudioEngineProtocol {
         }
 
         state = .running
+    }
+
+    private func configureGraph() throws(AudioEngineFailure) {
+        let inputFormat = engineBackend.inputFormat
+        guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
+            throw .invalidInputFormat(
+                sampleRate: inputFormat.sampleRate,
+                channelCount: inputFormat.channelCount
+            )
+        }
+
+        do {
+            try engineBackend.resetGraph()
+            try engineBackend.attachInstrumentMixer()
+            try engineBackend.connectInputToInstrument(format: inputFormat)
+            try engineBackend.connectInstrumentToMain()
+            try engineBackend.connectMainToOutput()
+        } catch {
+            throw .graphConfigurationFailed
+        }
     }
 
     func stop() throws(AudioEngineFailure) {
