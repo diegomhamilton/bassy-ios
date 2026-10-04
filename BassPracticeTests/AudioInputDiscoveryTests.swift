@@ -181,5 +181,6 @@ private enum TestDoubles {
         func setPreferredSampleRate(_ sampleRate: Double) throws {}
         func setPreferredIOBufferDuration(_ duration: TimeInterval) throws {}
         func setActive(_ active: Bool, notifyOthersOnDeactivation: Bool) throws {}
+        func setPreferredInput(id: String?) throws {}
     }
 }
