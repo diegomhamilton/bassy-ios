@@ -62,6 +62,7 @@ private enum Fixtures {
 private enum TestDoubles {
     actor AudioSession: AudioSessionManaging {
         let currentRoute = AudioRoute.empty
+        let availableInputs: [AudioInput] = []
 
         private(set) var snapshot = AudioSessionSnapshot(
             requestedSampleRate: 48_000,

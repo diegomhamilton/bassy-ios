@@ -4,6 +4,7 @@ import Foundation
 protocol AudioSessionManaging: AnyObject, Sendable {
     var snapshot: AudioSessionSnapshot { get async }
     var currentRoute: AudioRoute { get async }
+    var availableInputs: [AudioInput] { get async }
 
     func activate() async throws(AudioSessionError) -> AudioSessionSnapshot
     func deactivate() async throws(AudioSessionError)
@@ -44,6 +45,7 @@ actor AudioControlActor: AudioSessionManaging {
 
     private(set) var snapshot: AudioSessionSnapshot
     private(set) var currentRoute: AudioRoute
+    private(set) var availableInputs: [AudioInput]
 
     init(
         backend: any AudioSessionBackend,
@@ -52,6 +54,7 @@ actor AudioControlActor: AudioSessionManaging {
         self.backend = backend
         self.configuration = configuration
         currentRoute = backend.currentRoute
+        availableInputs = backend.availableInputs
         snapshot = AudioSessionSnapshot(
             requestedSampleRate: configuration.preferredSampleRate,
             requestedIOBufferDuration: configuration.preferredIOBufferDuration,
@@ -113,6 +116,7 @@ actor AudioControlActor: AudioSessionManaging {
             actualIOBufferDuration: backend.ioBufferDuration,
             isActive: true
         )
+        availableInputs = backend.availableInputs
         return snapshot
     }
 
@@ -143,6 +147,7 @@ actor AudioControlActor: AudioSessionManaging {
         switch event {
         case let .routeChanged(reason):
             currentRoute = backend.currentRoute
+            availableInputs = backend.availableInputs
             let routedEvent = AudioSessionEvent.routeChanged(
                 route: currentRoute,
                 reason: reason
@@ -186,6 +191,7 @@ protocol AudioSessionBackend: Sendable {
     var sampleRate: Double { get }
     var ioBufferDuration: TimeInterval { get }
     var currentRoute: AudioRoute { get }
+    var availableInputs: [AudioInput] { get }
     var events: AsyncStream<AudioSessionBackendEvent> { get }
 
     func configureForMeasurement() throws
@@ -215,6 +221,10 @@ final class SystemAudioSessionBackend: AudioSessionBackend, @unchecked Sendable 
             inputs: session.currentRoute.inputs.map(AudioDevice.init(portDescription:)),
             outputs: session.currentRoute.outputs.map(AudioDevice.init(portDescription:))
         )
+    }
+
+    var availableInputs: [AudioInput] {
+        (session.availableInputs ?? []).map(AudioInput.init(portDescription:))
     }
 
     init(
@@ -266,6 +276,16 @@ final class SystemAudioSessionBackend: AudioSessionBackend, @unchecked Sendable 
 }
 
 private extension AudioDevice {
+    init(portDescription: AVAudioSessionPortDescription) {
+        self.init(
+            id: portDescription.uid,
+            name: portDescription.portName,
+            portType: portDescription.portType.rawValue
+        )
+    }
+}
+
+private extension AudioInput {
     init(portDescription: AVAudioSessionPortDescription) {
         self.init(
             id: portDescription.uid,
