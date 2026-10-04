@@ -209,6 +209,8 @@ private enum TestDoubles {
 
         let sampleRate: Double
         let ioBufferDuration: TimeInterval
+        let currentRoute = AudioRoute.empty
+        let events: AsyncStream<AudioSessionBackendEvent>
 
         var commands: [Command] {
             lock.withLock { recordedCommands }
@@ -227,6 +229,7 @@ private enum TestDoubles {
             self.sampleRate = sampleRate
             self.ioBufferDuration = ioBufferDuration
             operationToFail = operation
+            events = AsyncStream { _ in }
         }
 
         func configureForMeasurement() throws {
