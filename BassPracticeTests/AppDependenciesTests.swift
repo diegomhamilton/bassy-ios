@@ -61,6 +61,8 @@ private enum Fixtures {
 
 private enum TestDoubles {
     actor AudioSession: AudioSessionManaging {
+        let currentRoute = AudioRoute.empty
+
         private(set) var snapshot = AudioSessionSnapshot(
             requestedSampleRate: 48_000,
             requestedIOBufferDuration: 0.00533,
@@ -74,6 +76,10 @@ private enum TestDoubles {
         }
 
         func deactivate() {}
+
+        func events() -> AsyncStream<AudioSessionEvent> {
+            AsyncStream { _ in }
+        }
     }
 
     final class AudioEngine: AudioEngineProtocol {
