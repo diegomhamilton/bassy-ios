@@ -63,6 +63,7 @@ private enum TestDoubles {
     actor AudioSession: AudioSessionManaging {
         let currentRoute = AudioRoute.empty
         let availableInputs: [AudioInput] = []
+        let preferredInput: AudioInput? = nil
 
         private(set) var snapshot = AudioSessionSnapshot(
             requestedSampleRate: 48_000,
@@ -77,6 +78,8 @@ private enum TestDoubles {
         }
 
         func deactivate() {}
+
+        func selectPreferredInput(id: String?) {}
 
         func events() -> AsyncStream<AudioSessionEvent> {
             AsyncStream { _ in }
