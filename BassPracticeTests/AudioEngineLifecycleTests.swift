@@ -164,6 +164,154 @@ struct AudioEngineLifecycleTests {
         #expect(recorder.commands == Fixtures.lifecycleCommands)
     }
 
+    @Test("Monitoring starts disabled at unity stored gain and mutes the instrument mixer")
+    func monitoringDefaultsToOff() async throws {
+        // Arrange
+        let recorder = TestDoubles.CommandRecorder()
+        let engine = TestDoubles.AudioEngineBackend(recorder: recorder)
+        let control = AudioControlActor(
+            backend: TestDoubles.AudioSessionBackend(recorder: recorder),
+            engineBackend: engine
+        )
+
+        // Act
+        try await control.start()
+
+        // Assert
+        #expect(await control.monitoringEnabled == false)
+        #expect(await control.monitoringGain == 1)
+        #expect(engine.instrumentMixerVolume == 0)
+    }
+
+    @Test(
+        "Monitoring clamps requested gain and applies the effective mixer volume",
+        arguments: Fixtures.monitoringGainCases
+    )
+    fileprivate func monitoringClampsGain(testCase: Fixtures.MonitoringGainCase) async throws {
+        // Arrange
+        let recorder = TestDoubles.CommandRecorder()
+        let engine = TestDoubles.AudioEngineBackend(recorder: recorder)
+        let control = AudioControlActor(
+            backend: TestDoubles.AudioSessionBackend(recorder: recorder),
+            engineBackend: engine
+        )
+        try await control.start()
+        recorder.reset()
+
+        // Act
+        try await control.setMonitoring(enabled: true, gain: testCase.requestedGain)
+
+        // Assert
+        #expect(await control.monitoringEnabled)
+        #expect(await control.monitoringGain == testCase.expectedGain)
+        #expect(engine.instrumentMixerVolume == testCase.expectedGain)
+        #expect(recorder.commands == testCase.expectedCommands)
+    }
+
+    @Test("A disabled gain change is retained without writing an unchanged muted volume")
+    func disabledMonitoringRetainsGainWithoutMixerWrite() async throws {
+        // Arrange
+        let recorder = TestDoubles.CommandRecorder()
+        let engine = TestDoubles.AudioEngineBackend(recorder: recorder)
+        let control = AudioControlActor(
+            backend: TestDoubles.AudioSessionBackend(recorder: recorder),
+            engineBackend: engine
+        )
+        try await control.start()
+        recorder.reset()
+
+        // Act
+        try await control.setMonitoring(enabled: false, gain: 0.35)
+        try await control.setMonitoring(enabled: true, gain: 0.35)
+
+        // Assert
+        #expect(await control.monitoringEnabled)
+        #expect(await control.monitoringGain == 0.35)
+        #expect(recorder.commands == [.engineSetInstrumentMixerVolume(0.35)])
+    }
+
+    @Test("Repeated monitoring settings avoid duplicate mixer writes and preserve the graph")
+    func repeatedMonitoringSettingsAreIdempotent() async throws {
+        // Arrange
+        let recorder = TestDoubles.CommandRecorder()
+        let engine = TestDoubles.AudioEngineBackend(recorder: recorder)
+        let control = AudioControlActor(
+            backend: TestDoubles.AudioSessionBackend(recorder: recorder),
+            engineBackend: engine
+        )
+        try await control.start()
+        recorder.reset()
+
+        // Act
+        try await control.setMonitoring(enabled: true, gain: 0.5)
+        try await control.setMonitoring(enabled: true, gain: 0.5)
+        try await control.setMonitoring(enabled: false, gain: 0.5)
+
+        // Assert
+        #expect(recorder.commands == [
+            .engineSetInstrumentMixerVolume(0.5),
+            .engineSetInstrumentMixerVolume(0)
+        ])
+        #expect(engine.resetCount == 1)
+        #expect(engine.attachCount == 1)
+        #expect(engine.inputConnectionCount == 1)
+        #expect(engine.instrumentConnectionCount == 1)
+        #expect(engine.outputConnectionCount == 1)
+    }
+
+    @Test("Graph rebuilds reapply the stored monitoring state")
+    func graphRebuildReappliesMonitoringState() async throws {
+        // Arrange
+        let recorder = TestDoubles.CommandRecorder()
+        let engine = TestDoubles.AudioEngineBackend(recorder: recorder)
+        let control = AudioControlActor(
+            backend: TestDoubles.AudioSessionBackend(recorder: recorder),
+            engineBackend: engine
+        )
+        try await control.setMonitoring(enabled: true, gain: 0.4)
+        recorder.reset()
+
+        // Act
+        try await control.start()
+        try await control.stop()
+        try await control.start()
+
+        // Assert
+        #expect(recorder.commands.filter(\.isMixerVolumeCommand) == [
+            .engineSetInstrumentMixerVolume(0.4),
+            .engineSetInstrumentMixerVolume(0.4)
+        ])
+        #expect(await control.monitoringEnabled)
+        #expect(await control.monitoringGain == 0.4)
+    }
+
+    @Test("A mixer write failure preserves the previous monitoring state")
+    func monitoringFailurePreservesState() async throws {
+        // Arrange
+        let recorder = TestDoubles.CommandRecorder()
+        let engine = TestDoubles.AudioEngineBackend(recorder: recorder)
+        let control = AudioControlActor(
+            backend: TestDoubles.AudioSessionBackend(recorder: recorder),
+            engineBackend: engine
+        )
+        try await control.start()
+        engine.failsMixerVolumeWrite = true
+        var receivedFailure: AudioEngineFailure?
+
+        // Act
+        do {
+            try await control.setMonitoring(enabled: true, gain: 0.6)
+        } catch {
+            receivedFailure = error
+        }
+
+        // Assert
+        #expect(receivedFailure == .monitoringConfigurationFailed)
+        #expect(await control.monitoringEnabled == false)
+        #expect(await control.monitoringGain == 1)
+        #expect(engine.instrumentMixerVolume == 0)
+    }
+
     @Test(
         "Start failures deactivate the session and publish a typed failed state",
         arguments: Fixtures.startFailureCases
@@ -271,6 +419,15 @@ private enum Fixtures {
         var testDescription: String { description }
     }
 
+    struct MonitoringGainCase: Sendable, CustomTestStringConvertible {
+        let description: String
+        let requestedGain: Float
+        let expectedGain: Float
+        let expectedCommands: [TestDoubles.Command]
+
+        var testDescription: String { description }
+    }
+
     static let defaultInputFormat = AudioEngineInputFormat(
         sampleRate: 48_000,
         channelCount: 1
@@ -302,6 +459,39 @@ private enum Fixtures {
         )
     ]
 
+    static let monitoringGainCases = [
+        MonitoringGainCase(
+            description: "below minimum",
+            requestedGain: -0.5,
+            expectedGain: 0,
+            expectedCommands: []
+        ),
+        MonitoringGainCase(
+            description: "minimum",
+            requestedGain: 0,
+            expectedGain: 0,
+            expectedCommands: []
+        ),
+        MonitoringGainCase(
+            description: "nominal",
+            requestedGain: 0.35,
+            expectedGain: 0.35,
+            expectedCommands: [.engineSetInstrumentMixerVolume(0.35)]
+        ),
+        MonitoringGainCase(
+            description: "maximum",
+            requestedGain: 1,
+            expectedGain: 1,
+            expectedCommands: [.engineSetInstrumentMixerVolume(1)]
+        ),
+        MonitoringGainCase(
+            description: "above maximum",
+            requestedGain: 1.5,
+            expectedGain: 1,
+            expectedCommands: [.engineSetInstrumentMixerVolume(1)]
+        )
+    ]
+
     static let sessionActivationCommands: [TestDoubles.Command] = [
         .sessionConfigure,
         .sessionPreferredSampleRate(48_000),
@@ -316,6 +506,7 @@ private enum Fixtures {
         .engineConnectInputToInstrument(sampleRate: 48_000, channelCount: 1),
         .engineConnectInstrumentToMain,
         .engineConnectMainToOutput,
+        .engineSetInstrumentMixerVolume(0),
         .enginePrepare,
         .engineStart
     ]
@@ -340,7 +531,8 @@ private enum Fixtures {
                 channelCount: format.channelCount
             ),
             .engineConnectInstrumentToMain,
-            .engineConnectMainToOutput
+            .engineConnectMainToOutput,
+            .engineSetInstrumentMixerVolume(0)
         ]
     }
 
@@ -349,7 +541,8 @@ private enum Fixtures {
         .attachInstrumentMixer,
         .connectInputToInstrument,
         .connectInstrumentToMain,
-        .connectMainToOutput
+        .connectMainToOutput,
+        .setInstrumentMixerVolume
     ]
 
     static func commandsForGraphFailure(
@@ -410,9 +603,17 @@ private enum TestDoubles {
         case engineConnectInputToInstrument(sampleRate: Double, channelCount: UInt32)
         case engineConnectInstrumentToMain
         case engineConnectMainToOutput
+        case engineSetInstrumentMixerVolume(Float)
         case enginePrepare
         case engineStart
         case engineStop
+
+        var isMixerVolumeCommand: Bool {
+            if case .engineSetInstrumentMixerVolume = self {
+                return true
+            }
+            return false
+        }
     }
 
     final class CommandRecorder: @unchecked Sendable {
@@ -490,6 +691,7 @@ private enum TestDoubles {
             case connectInputToInstrument
             case connectInstrumentToMain
             case connectMainToOutput
+            case setInstrumentMixerVolume
             case prepare
             case start
 
@@ -500,6 +702,7 @@ private enum TestDoubles {
                 case .connectInputToInstrument: 3
                 case .connectInstrumentToMain: 4
                 case .connectMainToOutput: 5
+                case .setInstrumentMixerVolume: 6
                 case .prepare, .start: preconditionFailure("Not a graph failure point")
                 }
             }
@@ -518,6 +721,8 @@ private enum TestDoubles {
         private var inputConnectCount = 0
         private var instrumentConnectCount = 0
         private var outputConnectCount = 0
+        private var storedInstrumentMixerVolume: Float = 1
+        private var shouldFailMixerVolumeWrite = false
 
         var inputFormat: AudioEngineInputFormat {
             recorder.append(.engineReadInputFormat(
@@ -532,6 +737,11 @@ private enum TestDoubles {
         var inputConnectionCount: Int { lock.withLock { inputConnectCount } }
         var instrumentConnectionCount: Int { lock.withLock { instrumentConnectCount } }
         var outputConnectionCount: Int { lock.withLock { outputConnectCount } }
+        var instrumentMixerVolume: Float { lock.withLock { storedInstrumentMixerVolume } }
+        var failsMixerVolumeWrite: Bool {
+            get { lock.withLock { shouldFailMixerVolumeWrite } }
+            set { lock.withLock { shouldFailMixerVolumeWrite = newValue } }
+        }
 
         init(
             recorder: CommandRecorder,
@@ -572,6 +782,14 @@ private enum TestDoubles {
         func connectMainToOutput() throws {
             try record(.engineConnectMainToOutput, failurePoint: .connectMainToOutput)
             lock.withLock { outputConnectCount += 1 }
+        }
+
+        func setInstrumentMixerVolume(_ volume: Float) throws {
+            recorder.append(.engineSetInstrumentMixerVolume(volume))
+            if failure == .setInstrumentMixerVolume || failsMixerVolumeWrite {
+                throw Failure.requested
+            }
+            lock.withLock { storedInstrumentMixerVolume = volume }
         }
 
         func prepare() throws {
