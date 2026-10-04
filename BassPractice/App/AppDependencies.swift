@@ -1,6 +1,7 @@
 import Foundation
 
 struct AppDependencies {
+    let audioSession: any AudioSessionManaging
     let audioEngine: any AudioEngineProtocol
     let sessionRepository: any SessionRepository
     let audioFileStore: any AudioFileStore
@@ -8,6 +9,7 @@ struct AppDependencies {
 
     static func live() -> AppDependencies {
         AppDependencies(
+            audioSession: AudioControlActor(backend: SystemAudioSessionBackend()),
             audioEngine: PreviewAudioEngine(),
             sessionRepository: InMemorySessionRepository(),
             audioFileStore: LocalAudioFileStore(),

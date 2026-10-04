@@ -1,48 +1,94 @@
-import XCTest
+import Foundation
+import Testing
 @testable import BassPractice
 
-final class AppDependenciesTests: XCTestCase {
-    func testDependenciesCanBeReplacedWithTestDoubles() {
-        let audioEngine = AudioEngineSpy()
-        let sessions = SessionRepositoryStub()
-        let files = AudioFileStoreStub()
+@Suite("App dependencies")
+struct AppDependenciesTests {
+    @Test("Dependencies can be replaced with test doubles")
+    func dependenciesCanBeReplacedWithTestDoubles() async {
+        // Arrange
+        let audioSession = TestDoubles.AudioSession()
+        let audioEngine = TestDoubles.AudioEngine()
+        let sessions = TestDoubles.SessionRepository()
+        let files = TestDoubles.AudioFileStore()
 
+        // Act
         let dependencies = AppDependencies(
+            audioSession: audioSession,
             audioEngine: audioEngine,
             sessionRepository: sessions,
             audioFileStore: files,
             logger: AppLogger()
         )
 
-        XCTAssertTrue(dependencies.audioEngine === audioEngine)
-        XCTAssertEqual(dependencies.sessionRepository.sessions(), sessions.result)
-        XCTAssertEqual(dependencies.audioFileStore.rootDirectory, files.rootDirectory)
+        // Assert
+        #expect(dependencies.audioSession === audioSession)
+        #expect(dependencies.audioEngine === audioEngine)
+        #expect(dependencies.sessionRepository.sessions() == sessions.result)
+        #expect(dependencies.audioFileStore.rootDirectory == files.rootDirectory)
     }
 
-    func testInitialDestinationDefaultsToSession() {
-        XCTAssertEqual(AppDestination.initial(arguments: []), .session)
+    @Test(
+        "Initial destination follows supported launch arguments",
+        arguments: Fixtures.destinationCases
+    )
+    fileprivate func initialDestination(testCase: Fixtures.DestinationCase) {
+        // Arrange
+        let arguments = testCase.arguments
+
+        // Act
+        let destination = AppDestination.initial(arguments: arguments)
+
+        // Assert
+        #expect(destination == testCase.expectedDestination)
+    }
+}
+
+private enum Fixtures {
+    struct DestinationCase: Sendable {
+        let arguments: [String]
+        let expectedDestination: AppDestination
     }
 
-    func testInitialDestinationReadsLaunchArgument() {
-        XCTAssertEqual(
-            AppDestination.initial(arguments: ["BassPractice", "-initial-tab", "library"]),
-            .library
+    static let destinationCases = [
+        DestinationCase(arguments: [], expectedDestination: .session),
+        DestinationCase(
+            arguments: ["BassPractice", "-initial-tab", "library"],
+            expectedDestination: .library
         )
+    ]
+}
+
+private enum TestDoubles {
+    actor AudioSession: AudioSessionManaging {
+        private(set) var snapshot = AudioSessionSnapshot(
+            requestedSampleRate: 48_000,
+            requestedIOBufferDuration: 0.00533,
+            actualSampleRate: nil,
+            actualIOBufferDuration: nil,
+            isActive: false
+        )
+
+        func activate() -> AudioSessionSnapshot {
+            snapshot
+        }
+
+        func deactivate() {}
     }
-}
 
-private final class AudioEngineSpy: AudioEngineProtocol {
-    let status: AudioEngineStatus = .idle
-}
-
-private final class SessionRepositoryStub: SessionRepository {
-    let result = [PracticeSession(id: UUID(), name: "Test Session")]
-
-    func sessions() -> [PracticeSession] {
-        result
+    final class AudioEngine: AudioEngineProtocol {
+        let status: AudioEngineStatus = .idle
     }
-}
 
-private struct AudioFileStoreStub: AudioFileStore {
-    let rootDirectory = URL(fileURLWithPath: "/tmp/bass-practice-tests")
+    final class SessionRepository: BassPractice.SessionRepository {
+        let result = [PracticeSession(id: UUID(), name: "Test Session")]
+
+        func sessions() -> [PracticeSession] {
+            result
+        }
+    }
+
+    struct AudioFileStore: BassPractice.AudioFileStore {
+        let rootDirectory = URL(fileURLWithPath: "/tmp/bass-practice-tests")
+    }
 }
