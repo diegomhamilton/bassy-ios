@@ -2,9 +2,12 @@ import AVFoundation
 
 protocol AudioEngineProtocol: AnyObject, Sendable {
     var state: AudioEngineState { get async }
+    var monitoringEnabled: Bool { get async }
+    var monitoringGain: Float { get async }
 
     func start() async throws(AudioEngineFailure)
     func stop() async throws(AudioEngineFailure)
+    func setMonitoring(enabled: Bool, gain: Float) async throws(AudioEngineFailure)
 }
 
 enum AudioEngineState: Equatable, Sendable {
@@ -21,6 +24,7 @@ enum AudioEngineFailure: Error, Equatable, Sendable {
     case graphConfigurationFailed
     case preparationFailed
     case startFailed
+    case monitoringConfigurationFailed
     case sessionDeactivation(AudioSessionError)
 }
 
@@ -32,6 +36,7 @@ protocol AudioEngineBackend: Sendable {
     func connectInputToInstrument(format: AudioEngineInputFormat) throws
     func connectInstrumentToMain() throws
     func connectMainToOutput() throws
+    func setInstrumentMixerVolume(_ volume: Float) throws
     func prepare() throws
     func start() throws
     func stop()
@@ -109,6 +114,10 @@ final class SystemAudioEngineBackend: AudioEngineBackend, @unchecked Sendable {
 
     func connectMainToOutput() throws {
         engine.connect(engine.mainMixerNode, to: engine.outputNode, format: nil)
+    }
+
+    func setInstrumentMixerVolume(_ volume: Float) throws {
+        instrumentMixer.outputVolume = volume
     }
 
     func prepare() throws {

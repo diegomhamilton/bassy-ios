@@ -101,9 +101,12 @@ private enum TestDoubles {
 
     actor AudioEngine: AudioEngineProtocol {
         let state: AudioEngineState = .stopped
+        let monitoringEnabled = false
+        let monitoringGain: Float = 1
 
         func start() {}
         func stop() {}
+        func setMonitoring(enabled: Bool, gain: Float) {}
     }
 
     final class SessionRepository: BassPractice.SessionRepository {

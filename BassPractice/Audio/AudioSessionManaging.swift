@@ -56,6 +56,8 @@ actor AudioControlActor: AudioSessionManaging, AudioEngineProtocol {
     private(set) var availableInputs: [AudioInput]
     private(set) var preferredInput: AudioInput?
     private(set) var state: AudioEngineState = .stopped
+    private(set) var monitoringEnabled = false
+    private(set) var monitoringGain: Float = 1
 
     init(
         backend: any AudioSessionBackend,
@@ -141,9 +143,35 @@ actor AudioControlActor: AudioSessionManaging, AudioEngineProtocol {
             try engineBackend.connectInputToInstrument(format: inputFormat)
             try engineBackend.connectInstrumentToMain()
             try engineBackend.connectMainToOutput()
+            try engineBackend.setInstrumentMixerVolume(effectiveMonitoringVolume)
         } catch {
             throw .graphConfigurationFailed
         }
+    }
+
+    func setMonitoring(enabled: Bool, gain: Float) throws(AudioEngineFailure) {
+        let clampedGain = min(max(gain, 0), 1)
+        let previousVolume = effectiveMonitoringVolume
+        let requestedVolume = enabled ? clampedGain : 0
+
+        guard monitoringEnabled != enabled || monitoringGain != clampedGain else {
+            return
+        }
+
+        if previousVolume != requestedVolume {
+            do {
+                try engineBackend.setInstrumentMixerVolume(requestedVolume)
+            } catch {
+                throw .monitoringConfigurationFailed
+            }
+        }
+
+        monitoringEnabled = enabled
+        monitoringGain = clampedGain
+    }
+
+    private var effectiveMonitoringVolume: Float {
+        monitoringEnabled ? monitoringGain : 0
     }
 
     func stop() throws(AudioEngineFailure) {
