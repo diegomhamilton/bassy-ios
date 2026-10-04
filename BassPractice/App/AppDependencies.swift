@@ -8,9 +8,13 @@ struct AppDependencies {
     let logger: AppLogger
 
     static func live() -> AppDependencies {
-        AppDependencies(
-            audioSession: AudioControlActor(backend: SystemAudioSessionBackend()),
-            audioEngine: PreviewAudioEngine(),
+        let audioControl = AudioControlActor(
+            backend: SystemAudioSessionBackend(),
+            engineBackend: SystemAudioEngineBackend()
+        )
+        return AppDependencies(
+            audioSession: audioControl,
+            audioEngine: audioControl,
             sessionRepository: InMemorySessionRepository(),
             audioFileStore: LocalAudioFileStore(),
             logger: AppLogger()

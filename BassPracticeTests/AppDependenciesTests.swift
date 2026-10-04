@@ -28,6 +28,19 @@ struct AppDependenciesTests {
         #expect(dependencies.audioFileStore.rootDirectory == files.rootDirectory)
     }
 
+    @Test("Live dependencies share one serialized audio control actor")
+    func liveDependenciesShareAudioControlActor() {
+        // Arrange
+        let dependencies = AppDependencies.live()
+
+        // Act
+        let audioSessionIdentifier = ObjectIdentifier(dependencies.audioSession)
+        let audioEngineIdentifier = ObjectIdentifier(dependencies.audioEngine)
+
+        // Assert
+        #expect(audioSessionIdentifier == audioEngineIdentifier)
+    }
+
     @Test(
         "Initial destination follows supported launch arguments",
         arguments: Fixtures.destinationCases
@@ -86,8 +99,11 @@ private enum TestDoubles {
         }
     }
 
-    final class AudioEngine: AudioEngineProtocol {
-        let status: AudioEngineStatus = .idle
+    actor AudioEngine: AudioEngineProtocol {
+        let state: AudioEngineState = .stopped
+
+        func start() {}
+        func stop() {}
     }
 
     final class SessionRepository: BassPractice.SessionRepository {

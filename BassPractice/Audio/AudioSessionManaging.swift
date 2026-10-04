@@ -42,8 +42,9 @@ enum AudioSessionError: Error, Equatable, Sendable {
     case inputSelectionFailed(id: String?)
 }
 
-actor AudioControlActor: AudioSessionManaging {
+actor AudioControlActor: AudioSessionManaging, AudioEngineProtocol {
     private let backend: any AudioSessionBackend
+    private let engineBackend: any AudioEngineBackend
     private let configuration: AudioSessionConfiguration
     private var eventContinuations: [UUID: AsyncStream<AudioSessionEvent>.Continuation] = [:]
     private var observationTask: Task<Void, Never>?
@@ -54,12 +55,15 @@ actor AudioControlActor: AudioSessionManaging {
     private(set) var currentRoute: AudioRoute
     private(set) var availableInputs: [AudioInput]
     private(set) var preferredInput: AudioInput?
+    private(set) var state: AudioEngineState = .stopped
 
     init(
         backend: any AudioSessionBackend,
+        engineBackend: any AudioEngineBackend = SystemAudioEngineBackend(),
         configuration: AudioSessionConfiguration = .bassPractice
     ) {
         self.backend = backend
+        self.engineBackend = engineBackend
         self.configuration = configuration
         currentRoute = backend.currentRoute
         availableInputs = backend.availableInputs
@@ -72,6 +76,71 @@ actor AudioControlActor: AudioSessionManaging {
             isActive: false
         )
 
+    }
+
+    func start() throws(AudioEngineFailure) {
+        guard state != .running, state != .starting else {
+            return
+        }
+
+        state = .starting
+
+        do {
+            _ = try activate()
+        } catch {
+            let failure = AudioEngineFailure.sessionActivation(error)
+            deactivateAfterFailedStart()
+            state = .failed(failure)
+            throw failure
+        }
+
+        do {
+            try engineBackend.prepare()
+        } catch {
+            let failure = AudioEngineFailure.preparationFailed
+            engineBackend.stop()
+            deactivateAfterFailedStart()
+            state = .failed(failure)
+            throw failure
+        }
+
+        do {
+            try engineBackend.start()
+        } catch {
+            let failure = AudioEngineFailure.startFailed
+            engineBackend.stop()
+            deactivateAfterFailedStart()
+            state = .failed(failure)
+            throw failure
+        }
+
+        state = .running
+    }
+
+    func stop() throws(AudioEngineFailure) {
+        guard state != .stopped else {
+            return
+        }
+
+        engineBackend.stop()
+
+        do {
+            try deactivate()
+        } catch {
+            let failure = AudioEngineFailure.sessionDeactivation(error)
+            state = .failed(failure)
+            throw failure
+        }
+
+        state = .stopped
+    }
+
+    private func deactivateAfterFailedStart() {
+        if snapshot.isActive {
+            try? deactivate()
+        } else {
+            try? backend.setActive(false, notifyOthersOnDeactivation: true)
+        }
     }
 
     func events() -> AsyncStream<AudioSessionEvent> {
