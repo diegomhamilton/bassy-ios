@@ -120,6 +120,47 @@ struct SessionRepositoryTests {
         #expect(throws: SessionValidationError.emptyName) { try blank.get() }
         #expect(throws: SessionValidationError.duplicateRecordingID) { try duplicate.get() }
     }
+
+    @Test("A late save cannot recreate a deleted session")
+    func deletedSessionRejectsLateSave() async throws {
+        // Arrange
+        let root = Fixtures.root()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = FileSessionRepository(rootDirectory: root)
+        let session = try await repository.create(name: "Deleted")
+        try await repository.delete(id: session.id)
+
+        // Act
+        var failure: SessionRepositoryError?
+        do { try await repository.save(session) } catch { failure = error }
+        let remaining = try await repository.sessions()
+
+        // Assert
+        #expect(failure == .notFound)
+        #expect(remaining.isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent("Sessions/\(session.id.uuidString)").path))
+    }
+
+    @Test("Cancelled saves leave existing metadata untouched")
+    func cancelledSavePreservesMetadata() async throws {
+        // Arrange
+        let root = Fixtures.root()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = FileSessionRepository(rootDirectory: root)
+        let original = try await repository.create(name: "Original")
+        let changed = try PracticeSession(id: original.id, name: "Changed", createdAt: original.createdAt)
+
+        // Act
+        let rejected = await Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            do { try await repository.save(changed); return false } catch { return true }
+        }.value
+        let restored = try await repository.load(id: original.id)
+
+        // Assert
+        #expect(rejected)
+        #expect(restored == original)
+    }
 }
 
 private enum Fixtures {

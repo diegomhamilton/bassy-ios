@@ -59,6 +59,8 @@ struct UnavailableSessionRepository: SessionRepository {
 
 actor FileSessionRepository: SessionRepository {
     private let rootDirectory: URL
+    // Actor jobs may arrive after deletion; late saves must not recreate removed folders.
+    private var deletedIDs = Set<UUID>()
     init(rootDirectory: URL) { self.rootDirectory = rootDirectory.appendingPathComponent("Sessions", isDirectory: true) }
     func sessions() throws(SessionRepositoryError) -> [PracticeSession] {
         let folders: [URL]
@@ -90,6 +92,8 @@ actor FileSessionRepository: SessionRepository {
         return try decode(data, id: id)
     }
     func save(_ session: PracticeSession) throws(SessionRepositoryError) {
+        guard !Task.isCancelled else { throw .writeFailed }
+        guard !deletedIDs.contains(session.id) else { throw .notFound }
         if FileManager.default.fileExists(atPath: metadataURL(session.id).path) { _ = try load(id: session.id) }
         guard session.recordings.allSatisfy({ $0.fileURL.standardizedFileURL == recordingURL(sessionID: session.id, recordingID: $0.id).standardizedFileURL }) else { throw .invalidStore }
         do {
@@ -100,7 +104,10 @@ actor FileSessionRepository: SessionRepository {
     }
     func delete(id: UUID) throws(SessionRepositoryError) {
         _ = try load(id: id)
-        do { try FileManager.default.removeItem(at: folderURL(id)) } catch { throw .deleteFailed }
+        do {
+            try FileManager.default.removeItem(at: folderURL(id))
+            deletedIDs.insert(id)
+        } catch { throw .deleteFailed }
     }
     private func folderURL(_ id: UUID) -> URL { rootDirectory.appendingPathComponent(id.uuidString, isDirectory: true) }
     private func metadataURL(_ id: UUID) -> URL { folderURL(id).appendingPathComponent("session.json") }
