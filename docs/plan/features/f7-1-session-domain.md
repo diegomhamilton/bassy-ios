@@ -3,7 +3,7 @@ title: F7.1 — Session Domain
 feature: F7.1
 version: V0.1
 phase: "Phase 7 — Session Persistence"
-status: proposed
+status: review-pending
 tags:
   - feature-pr
   - v0-1
@@ -58,5 +58,13 @@ Persist session metadata independently of audio files.
 ## Task PR F7.1.4 — Autosave
 
 Important changes trigger debounced saving.
+
+## Implemented checkpoint
+
+Branch `codex/session-library` implements a validated immutable `PracticeSession`, an actor-isolated file repository, schema-versioned atomic JSON metadata, relative recording identities, and debounced saving after successful tone, mixer and media changes. Background entry flushes the current snapshot. Blank names retain the last valid name during autosave and show an explicit notice; manual save rejects a blank name.
+
+Audio settings and recording metadata restore together while the engine is stopped. Unsupported settings and backend failures retain the previously committed audio snapshot. Existing F4 CAF folders are recovered without deleting incomplete files; their original tone was never stored and cannot be reconstructed.
+
+V0.1 stores profile/preset references and the current gain/EQ/mixer values. Loops and preset application UI belong to later scopes. See [the F7 checkpoint](../../snapshots/2026-10-05_F7_session-library/README.md) for validation and remaining hardware gates.
 
 ---
