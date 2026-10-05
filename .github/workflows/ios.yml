@@ -10,18 +10,43 @@ jobs:
   build-and-test:
     runs-on: macos-15
     timeout-minutes: 30
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
 
     steps:
       - uses: actions/checkout@v4
 
       - name: Show Xcode version
-        run: xcodebuild -version
+        run: |
+          mkdir -p "$RUNNER_TEMP/BassyDiagnostics"
+          xcodebuild -version | tee "$RUNNER_TEMP/BassyDiagnostics/xcode-version.txt"
+          xcrun simctl list --json > "$RUNNER_TEMP/BassyDiagnostics/simulators.json"
+
+      - name: Prepare iOS 26.2 simulator
+        run: |
+          BASSY_CI_SIMULATOR_ID=$(xcrun simctl create 'Bassy CI iPhone' com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro com.apple.CoreSimulator.SimRuntime.iOS-26-2)
+          echo "BASSY_CI_SIMULATOR_ID=$BASSY_CI_SIMULATOR_ID" >> "$GITHUB_ENV"
+          xcrun simctl boot "$BASSY_CI_SIMULATOR_ID"
+          xcrun simctl bootstatus "$BASSY_CI_SIMULATOR_ID" -b
 
       - name: Build and test
-        run: >-
-          xcodebuild
-          -project BassPractice.xcodeproj
-          -scheme BassPractice
-          -destination 'platform=iOS Simulator,name=iPhone 16 Pro'
-          -derivedDataPath "$RUNNER_TEMP/BassPracticeDerivedData"
-          test
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project BassPractice.xcodeproj \
+            -scheme BassPractice \
+            -destination "platform=iOS Simulator,id=$BASSY_CI_SIMULATOR_ID" \
+            -derivedDataPath "$RUNNER_TEMP/BassPracticeDerivedData" \
+            -resultBundlePath "$RUNNER_TEMP/BassPractice.xcresult" \
+            test 2>&1 | tee "$RUNNER_TEMP/BassyDiagnostics/xcodebuild.log"
+
+      - name: Upload test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-test-results-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/BassPractice.xcresult
+            ${{ runner.temp }}/BassyDiagnostics
+          retention-days: 7
+          compression-level: 0

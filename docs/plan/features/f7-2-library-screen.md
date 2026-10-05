@@ -3,7 +3,7 @@ title: F7.2 — Library Screen
 feature: F7.2
 version: V0.1
 phase: "Phase 7 — Session Persistence"
-status: proposed
+status: review-pending
 tags:
   - feature-pr
   - v0-1
@@ -45,5 +45,11 @@ mixer levels
 ## Feature acceptance criteria
 
 Closing and reopening the app preserves the complete working session.
+
+## Implemented checkpoint
+
+The Library lists name, date and recording count, opens saved audio workspaces, renames sessions, creates sessions, and confirms deletion of the chosen session and its recordings. Deleting the current session first switches to a replacement; the repository rejects cancelled saves and late saves for IDs it has deleted. Failed reads remain visible and corrupt/future metadata cannot be overwritten by a normal save.
+
+Session and Library share one workspace model. The most recently saved session is reopened at launch with audio stopped; Tone refreshes for the opened session. See [the F7 checkpoint](../../snapshots/2026-10-05_F7_session-library/README.md). Manual Library interaction and physical audio validation remain review gates.
 
 ---
