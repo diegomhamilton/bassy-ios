@@ -952,6 +952,12 @@ private enum TestDoubles {
             lock.withLock { mixerAttachCount += 1 }
         }
 
+        func setGain(_ configuration: GainConfiguration, for stage: GainStage) throws {
+            try NativeGainLimits.validate(configuration, stage: stage)
+            lock.withLock { storedGains[stage] = configuration }
+        }
+        private var storedGains: [GainStage: GainConfiguration] = [:]
+
         func connectInputToInstrument(format: AudioEngineInputFormat) throws {
             try record(
                 .engineConnectInputToInstrument(

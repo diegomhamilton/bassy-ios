@@ -42,7 +42,7 @@ enum AudioSessionError: Error, Equatable, Sendable {
     case inputSelectionFailed(id: String?)
 }
 
-actor AudioControlActor: AudioSessionManaging, AudioEngineProtocol {
+actor AudioControlActor: AudioSessionManaging, AudioEngineProtocol, AudioGainControlling {
     private let backend: any AudioSessionBackend
     private let engineBackend: any AudioEngineBackend
     private let configuration: AudioSessionConfiguration
@@ -54,6 +54,8 @@ actor AudioControlActor: AudioSessionManaging, AudioEngineProtocol {
     private var configuredInputFormat: AudioEngineInputFormat?
     private var configuredOutputFormat: AudioFormatDiagnostics?
     private var isInBackground = false
+    private var inputGain: GainConfiguration = .unity
+    private var outputGain: GainConfiguration = .unity
 
     private(set) var snapshot: AudioSessionSnapshot
     private(set) var currentRoute: AudioRoute
@@ -163,6 +165,8 @@ actor AudioControlActor: AudioSessionManaging, AudioEngineProtocol {
             try engineBackend.connectInstrumentToMain()
             try engineBackend.connectMainToOutput()
             try engineBackend.setInstrumentMixerVolume(effectiveMonitoringVolume)
+            try engineBackend.setGain(inputGain, for: .input)
+            try engineBackend.setGain(outputGain, for: .output)
             configuredInputFormat = inputFormat
             configuredOutputFormat = engineBackend.diagnosticFormats?.output
         } catch {
@@ -189,6 +193,19 @@ actor AudioControlActor: AudioSessionManaging, AudioEngineProtocol {
 
         monitoringEnabled = enabled
         monitoringGain = clampedGain
+    }
+
+    func gain(for stage: GainStage) -> GainConfiguration {
+        stage == .input ? inputGain : outputGain
+    }
+
+    func setGain(_ configuration: GainConfiguration, for stage: GainStage) throws(GainProcessingError) {
+        try NativeGainLimits.validate(configuration, stage: stage)
+        guard gain(for: stage) != configuration else { return }
+        do { try engineBackend.setGain(configuration, for: stage) }
+        catch { throw .backendFailure }
+        if stage == .input { inputGain = configuration }
+        else { outputGain = configuration }
     }
 
     private var effectiveMonitoringVolume: Float {

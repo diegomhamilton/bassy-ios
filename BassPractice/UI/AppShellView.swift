@@ -39,7 +39,7 @@ struct AppShellView: View {
             .tag(AppDestination.session)
 
             NavigationStack {
-                ToneView()
+                ToneView(controller: dependencies.gainController)
             }
             .tabItem {
                 Label("Tone", systemImage: "slider.horizontal.3")
