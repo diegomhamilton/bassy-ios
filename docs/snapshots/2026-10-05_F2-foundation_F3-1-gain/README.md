@@ -26,4 +26,4 @@ Device build and `devicectl` installation succeeded on Diego Phone (iPhone Air, 
 
 Listen on Diego Phone with the actual instrument/interface and output route. Start audio and enable Live Monitoring in Session, then exercise both gains and bypass in Tone. Confirm audible changes, monitoring silence, interruption/route recovery and continuous operation. No hardware listening result is claimed.
 
-F2.1.1 and F2.1.2 draft PRs #14/#15 passed CI. F2.1.3 branch `72fd7ec` was pushed, but automatic approval review rejected draft PR creation for lack of explicit destination authorization. An authorization question is pending; gain changes remain local until answered. No merges performed.
+F2.1.1 and F2.1.2 draft PRs #14/#15 passed CI. Automatic approval review initially rejected F2.1.3 draft PR creation for lack of explicit destination authorization. The user subsequently authorized filing PRs: persistence [#16](https://github.com/diegomhamilton/bassy-ios/pull/16) and gain [#17](https://github.com/diegomhamilton/bassy-ios/pull/17) were created and both passed CI. No merges performed.
