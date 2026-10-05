@@ -1,14 +1,86 @@
 import SwiftUI
 
 struct SessionView: View {
-    let audioEngine: any AudioEngineProtocol
+    @State private var model: SessionModel
+    @State private var gain: Float = 1
+
+    init(audioEngine: any AudioEngineProtocol, audioSession: any AudioSessionManaging) {
+        _model = State(initialValue: SessionModel(engine: audioEngine, session: audioSession))
+    }
 
     var body: some View {
-        ContentUnavailableView {
-            Label("Start a Session", systemImage: "waveform.circle")
-        } description: {
-            Text("Input monitoring and recording arrive in the audio foundation milestones.")
+        Form {
+            Section("Audio") {
+                LabeledContent("State", value: stateLabel)
+                Button(model.state == .running ? "Stop Audio" : "Start Audio") {
+                    Task { await model.toggleRunning() }
+                }.disabled(model.isBusy)
+                if model.state == .interrupted {
+                    Button("Stop Audio") { Task { await model.stop() } }.disabled(model.isBusy)
+                }
+                Picker("Input", selection: Binding(
+                    get: { model.selectedInputID },
+                    set: { id in Task { await model.selectInput(id) } }
+                )) {
+                    Text("System Default").tag(String?.none)
+                    ForEach(model.inputs) { Text($0.name).tag(Optional($0.id)) }
+                }.disabled(model.isBusy || model.state == .running)
+                Text("Start and stop audio to discover inputs, then choose an input before starting again.").font(.caption).foregroundStyle(.secondary)
+            }
+            Section("Monitoring") {
+                Toggle("Live Monitoring", isOn: Binding(
+                    get: { model.monitoringEnabled },
+                    set: { enabled in Task { await model.setMonitoring(enabled: enabled, gain: model.monitoringGain) } }
+                ))
+                LabeledContent("Gain", value: "\(Int(gain * 100))%")
+                Slider(value: $gain, in: 0...1) { editing in
+                    if !editing {
+                        Task {
+                            await model.setMonitoring(enabled: model.monitoringEnabled, gain: gain)
+                            gain = model.monitoringGain
+                        }
+                    }
+                }
+                Text("Use headphones to avoid microphone feedback.").font(.caption).foregroundStyle(.secondary)
+            }.disabled(model.isBusy)
+            Section("Current Route") {
+                LabeledContent("Input", value: names(model.route.inputs))
+                LabeledContent("Output", value: names(model.route.outputs))
+            }
+            Section("Actual Audio Diagnostics") {
+                if let value = model.diagnostics {
+                    LabeledContent("Session Sample Rate", value: String(format: "%.0f Hz", value.actualSessionSampleRate))
+                    LabeledContent("Input Channels", value: String(value.inputChannelCount))
+                    LabeledContent("Input Format", value: format(value.inputFormat))
+                    LabeledContent("Output Format", value: format(value.outputFormat))
+                    LabeledContent("IO Buffer", value: String(format: "%.2f ms", value.actualIOBufferDuration * 1000))
+                } else { Text("Start audio to read the actual hardware formats.") }
+                Button("Refresh Diagnostics") { Task { await model.refresh() } }.disabled(model.isBusy)
+            }
+            if let error = model.errorMessage {
+                Section("Audio Error") { Text(error).foregroundStyle(.red) }
+            }
         }
         .navigationTitle("Session")
+        .task { await model.observe() }
+        .onChange(of: model.monitoringGain) { _, value in gain = value }
+    }
+
+    private var stateLabel: String {
+        switch model.state {
+        case .stopped: "Stopped"
+        case .starting: "Starting"
+        case .running: "Running"
+        case .interrupted: "Interrupted"
+        case .failed: "Failed"
+        }
+    }
+
+    private func names(_ devices: [AudioDevice]) -> String {
+        devices.isEmpty ? "None" : devices.map(\.name).joined(separator: ", ")
+    }
+
+    private func format(_ value: AudioFormatDiagnostics) -> String {
+        "\(Int(value.sampleRate)) Hz · \(value.channelCount) ch · \(value.sampleEncoding) · \(value.isInterleaved ? "interleaved" : "noninterleaved")"
     }
 }

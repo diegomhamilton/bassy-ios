@@ -3,7 +3,7 @@ title: F1.2 — Audio Engine Core
 feature: F1.2
 version: V0.1
 phase: "Phase 1 — Audio Hardware Foundation"
-status: proposed
+status: hardware-review-pending
 tags:
   - feature-pr
   - v0-1
@@ -12,6 +12,14 @@ tags:
 # F1.2 — Audio Engine Core
 
 [[../releases/v0-1|← V0.1]] · [[../implementation-plan|Plan index]]
+
+## Verified implementation checkpoint
+
+Commit `2b8aacc7eae622aaa52341d88bf3950a02302f05` passed the complete `BassPractice` scheme through XcodeBuildMCP: 62 logical / 98 expanded cases, 0 failures or skips. [Checkpoint evidence and hardware checklist](../../snapshots/2026-10-05_F1-2_audio-engine-core/README.md). The earlier checked boxes predated implementation; this checkpoint supplies the actual verification.
+
+The same source commit was built with the user's local uncommitted signing configuration, installed on Diego Phone (iPhone Air, iOS 26.6.1), and launched without the debugger; BassPractice PID 3115 was confirmed active. Hardware audio review remains pending.
+
+Complete [Feature PR #13](https://github.com/diegomhamilton/bassy-ios/pull/13), branch `codex/test-feature-f1-2-audio-engine-core`, is based on F1.1 [PR #6](https://github.com/diegomhamilton/bassy-ios/pull/6). Task stack: [#7](https://github.com/diegomhamilton/bassy-ios/pull/7) → [#8](https://github.com/diegomhamilton/bassy-ios/pull/8) → [#9](https://github.com/diegomhamilton/bassy-ios/pull/9) → [#10](https://github.com/diegomhamilton/bassy-ios/pull/10) → [#12](https://github.com/diegomhamilton/bassy-ios/pull/12). Efficiency [PR #11](https://github.com/diegomhamilton/bassy-ios/pull/11) is separate, based on main, and contains no app code. Hardware review, feature review and explicit merge authorization remain pending.
 
 ## Task PR checklist
 
