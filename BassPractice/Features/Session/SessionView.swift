@@ -1,153 +1,194 @@
 import SwiftUI
 
 struct SessionView: View {
-    @State private var model: SessionModel
-    @State private var gain: Float = 1
-    @State private var profiles: ProfileSelectionModel
-    @State private var playbackVolume: Float = 1
+    let model: SessionModel
+    let toneController: any AudioToneControlling
+    let profileRepository: any InputProfileRepository
+    @State private var showTone: Bool
 
-    init(model: SessionModel, toneController: any AudioToneControlling, profileRepository: any InputProfileRepository) {
-        _model = State(initialValue: model)
-        _profiles = State(initialValue: ProfileSelectionModel(controller: toneController, repository: profileRepository))
+    init(model: SessionModel, toneController: any AudioToneControlling, profileRepository: any InputProfileRepository, showToneInitially: Bool = false) {
+        self.model = model
+        self.toneController = toneController
+        self.profileRepository = profileRepository
+        _showTone = State(initialValue: showToneInitially)
     }
 
     var body: some View {
-        Form {
-            Section("Practice Session") {
-                TextField("Session name", text: Binding(get: { model.sessionName }, set: { model.renameDraft($0) }))
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
                 HStack {
-                    Button("Save Session") { Task { await model.saveCurrentSession() } }
+                    Text(model.sessionName).font(.headline)
                     Spacer()
-                    Button("New Session") { Task { await model.newSession() } }
-                }.buttonStyle(.borderless)
-                if let date = model.lastSavedAt { Text("Saved \(date, style: .time)").font(.caption).foregroundStyle(.secondary) }
-                if let notice = model.storageNotice { Text(notice).font(.caption).foregroundStyle(.secondary) }
-            }.disabled(model.isBusy)
-            Section("Audio") {
-                LabeledContent("State", value: stateLabel)
-                Button(model.state == .running ? "Stop Audio" : "Start Audio") {
-                    Task { await model.toggleRunning() }
-                }.disabled(model.isBusy)
-                if model.state == .interrupted {
-                    Button("Stop Audio") { Task { await model.stop() } }.disabled(model.isBusy)
+                    SessionSaveLabel(model: model)
                 }
-                Picker("Input", selection: Binding(
-                    get: { model.selectedInputID },
-                    set: { id in Task { await model.selectInput(id) } }
-                )) {
-                    Text("System Default").tag(String?.none)
-                    ForEach(model.inputs) { Text($0.name).tag(Optional($0.id)) }
-                }.disabled(model.isBusy || model.state == .running)
-                Text("Start and stop audio to discover inputs, then choose an input before starting again.").font(.caption).foregroundStyle(.secondary)
-            }
-            Section("Instrument Profile") { ProfilePicker(model: profiles) }
-            Section("Recording") {
-                if case let .recording(_, _, startedAt) = model.recordingState {
-                    Text("Recording since \(startedAt, style: .time)").foregroundStyle(.red)
-                    Button("Stop Recording") { Task { await model.toggleRecording() } }
-                } else {
-                    Button("Record Processed Instrument") { Task { await model.toggleRecording() } }
-                        .disabled(model.state != .running)
-                    Text("Start audio first. Live Monitoring can stay off while recording.").font(.caption).foregroundStyle(.secondary)
+                NavigationLink {
+                    AudioSettingsView(model: model)
+                } label: {
+                    Label(model.state == .stopped ? "Output not yet confirmed" : model.route.outputDescription, systemImage: "speaker.wave.2")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 12)
+                }.accessibilityIdentifier("practice.audioSettings")
+
+                VStack(spacing: 16) {
+                    transportStatus
+                    Button {
+                        Task { await model.toggleRecording() }
+                    } label: {
+                        Label(model.isRecording ? "Finish Recording" : "Record", systemImage: model.isRecording ? "stop.fill" : "record.circle")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(model.isRecording ? .red : .accentColor)
+                    .disabled(model.isBusy)
+                    .accessibilityIdentifier("practice.record")
+
+                    Button {
+                        Task { await model.toggleLiveMonitoring() }
+                    } label: {
+                        Label(model.monitoringEnabled && model.state == .running ? "Turn Off Live Monitoring" : "Listen Live", systemImage: "headphones")
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    }.buttonStyle(.bordered).disabled(model.isBusy)
+                        .accessibilityIdentifier("practice.monitor")
                 }
-                if case let .failed(failure) = model.recordingState { Text(failure.message).foregroundStyle(.red) }
-                ForEach(model.recordings) { recording in
-                    HStack {
-                        Text(recording.createdAt, style: .time)
-                        Spacer()
-                        Text(String(format: "%.1f s", recording.duration)).foregroundStyle(.secondary)
-                        Button("Play") { Task { await model.playRecording(recording) } }
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Latest Recording").font(.headline)
+                    if let recording = model.latestRecording {
+                        RecordingRow(recording: recording, model: model)
+                    } else {
+                        Text("Record a phrase, then listen to it here.").foregroundStyle(.secondary)
                     }
                 }
-                if case .playing = model.playbackState { Button("Stop Playback") { Task { await model.stopPlayback() } } }
-            }.disabled(model.isBusy)
-            Section("Playback Mix") {
-                Toggle("Mute Playback", isOn: Binding(
-                    get: { model.playbackMix.muted },
-                    set: { value in Task { await model.updatePlaybackMix(MixerChannelConfiguration(volume: model.playbackMix.volume, muted: value)) } }
-                ))
-                LabeledContent("Volume", value: "\(Int(playbackVolume * 100))%")
-                Slider(value: $playbackVolume, in: 0...1) { editing in
-                    if !editing { Task { await model.updatePlaybackMix(MixerChannelConfiguration(volume: playbackVolume, muted: model.playbackMix.muted)); playbackVolume = model.playbackMix.volume } }
+                PlaybackNotice(model: model)
+                WorkspaceNotices(model: model)
+                if model.state != .stopped && !model.isRecording {
+                    Button("End Audio", systemImage: "power") { Task { await model.stop() } }
+                        .disabled(model.isBusy)
                 }
-            }.disabled(model.isBusy)
-            Section("Source Levels") {
-                TimelineView(.periodic(from: .now, by: 0.2)) { context in
-                    VStack(alignment: .leading) {
-                        levelRow("Instrument", level: model.instrumentLevel)
-                        levelRow("Playback", level: model.playbackLevel)
-                    }.task(id: context.date) { await model.refreshLevels() }
-                }
-                Text("Levels are measured before each source volume/mute. A muted source can still show signal.").font(.caption).foregroundStyle(.secondary)
             }
-            Section("Monitoring") {
-                Toggle("Live Monitoring", isOn: Binding(
-                    get: { model.monitoringEnabled },
-                    set: { enabled in Task { await model.setMonitoring(enabled: enabled, gain: model.monitoringGain) } }
-                ))
-                LabeledContent("Gain", value: "\(Int(gain * 100))%")
-                Slider(value: $gain, in: 0...1) { editing in
-                    if !editing {
-                        Task {
-                            await model.setMonitoring(enabled: model.monitoringEnabled, gain: gain)
-                            gain = model.monitoringGain
-                        }
-                    }
-                }
-                Text("Use headphones to avoid microphone feedback.").font(.caption).foregroundStyle(.secondary)
-            }.disabled(model.isBusy)
-            Section("Current Route") {
-                LabeledContent("Input", value: names(model.route.inputs))
-                LabeledContent("Output", value: names(model.route.outputs))
-            }
-            Section("Actual Audio Diagnostics") {
-                if let value = model.diagnostics {
-                    LabeledContent("Session Sample Rate", value: String(format: "%.0f Hz", value.actualSessionSampleRate))
-                    LabeledContent("Input Channels", value: String(value.inputChannelCount))
-                    LabeledContent("Input Format", value: format(value.inputFormat))
-                    LabeledContent("Output Format", value: format(value.outputFormat))
-                    LabeledContent("IO Buffer", value: String(format: "%.2f ms", value.actualIOBufferDuration * 1000))
-                } else { Text("Start audio to read the actual hardware formats.") }
-                Button("Refresh Diagnostics") { Task { await model.refresh() } }.disabled(model.isBusy)
-            }
-            if let error = model.errorMessage {
-                Section("Audio Error") { Text(error).foregroundStyle(.red) }
+            .padding()
+        }
+        .navigationTitle("Practice")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Tone", systemImage: "slider.horizontal.3") { showTone = true }
+                    .accessibilityIdentifier("practice.tone")
             }
         }
-        .navigationTitle("Session")
-        .task { await profiles.refresh() }
-        .onChange(of: model.practiceSessionID) { _, _ in Task { await profiles.refresh() } }
-        .onChange(of: model.monitoringGain) { _, value in gain = value }
-        .onChange(of: model.playbackMix.volume) { _, value in playbackVolume = value }
-    }
-
-    private var stateLabel: String {
-        switch model.state {
-        case .stopped: "Stopped"
-        case .starting: "Starting"
-        case .running: "Running"
-        case .interrupted: "Interrupted"
-        case .failed: "Failed"
+        .sheet(isPresented: $showTone) {
+            NavigationStack {
+                ToneView(controller: toneController, profileRepository: profileRepository)
+                    .id(model.practiceSessionID)
+                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showTone = false } } }
+            }
+        }
+        .confirmationDialog("Listen through the iPhone microphone and speaker?", isPresented: Binding(
+            get: { model.needsMonitoringConfirmation },
+            set: { if !$0 { model.cancelMonitoringConfirmation() } }
+        ), titleVisibility: .visible) {
+            Button("Continue at Low Volume") { Task { await model.toggleLiveMonitoring(confirmBuiltInOutput: true) } }
+            Button("Cancel", role: .cancel) { model.cancelMonitoringConfirmation() }
+        } message: {
+            Text("Use headphones to avoid feedback. Live monitoring will start at a low volume if you continue.")
         }
     }
 
-    private func levelRow(_ title: String, level: AudioLevel?) -> some View {
-        VStack(alignment: .leading) {
+    @ViewBuilder private var transportStatus: some View {
+        if case let .recording(_, _, startedAt) = model.recordingState {
             HStack {
-                Text(title)
-                Spacer()
-                Text(level.map { $0.clipping ? "Clipping" : ($0.peak > 0.0001 ? "Signal" : "No Signal") } ?? "Unavailable")
-                    .foregroundStyle(level?.clipping == true ? .red : .secondary)
-            }
-            ProgressView(value: Double(min(level?.peak ?? 0, 1)))
+                Label("Recording", systemImage: "record.circle.fill").foregroundStyle(.red)
+                Text(startedAt, style: .timer).monospacedDigit()
+            }.accessibilityIdentifier("practice.recordingStatus")
+        } else if case .playing = model.playbackState {
+            Label("Playing Recording", systemImage: "play.fill")
+        } else if model.isBusy {
+            ProgressView("Preparing…")
+        } else if model.state == .interrupted {
+            Text("Audio Interrupted").foregroundStyle(.secondary)
+        } else if model.monitoringEnabled && model.state == .running {
+            Label("Listening Live", systemImage: "waveform")
+        } else {
+            Text("Ready to Record").foregroundStyle(.secondary)
         }
     }
+}
 
-    private func names(_ devices: [AudioDevice]) -> String {
-        devices.isEmpty ? "None" : devices.map(\.name).joined(separator: ", ")
+struct RecordingRow: View {
+    let recording: Recording
+    let model: SessionModel
+    private var isPlaying: Bool { model.playbackState == .playing(recording.id) }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(recording.createdAt, format: .dateTime.month(.abbreviated).day().hour().minute())
+                Text(String(format: "%.1f s", recording.duration)).font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button {
+                Task {
+                    if isPlaying { await model.stopPlayback() }
+                    else { await model.playRecording(recording) }
+                }
+            } label: {
+                Label(isPlaying ? "Stop" : "Listen", systemImage: isPlaying ? "stop.fill" : "play.fill")
+                    .frame(minHeight: 44)
+            }.buttonStyle(.bordered)
+                .disabled(model.isBusy || model.isRecording)
+                .accessibilityIdentifier("recording.\(recording.id.uuidString).play")
+        }
     }
+}
 
-    private func format(_ value: AudioFormatDiagnostics) -> String {
-        "\(Int(value.sampleRate)) Hz · \(value.channelCount) ch · \(value.sampleEncoding) · \(value.isInterleaved ? "interleaved" : "noninterleaved")"
+struct SessionSaveLabel: View {
+    let model: SessionModel
+    var body: some View {
+        Group {
+            if model.isRecording {
+                Text("Recording…")
+            } else {
+                switch model.saveStatus {
+                case .unsaved: Text("Not Saved")
+                case .pending, .saving: Text("Saving…")
+                case .failed: Text("Save Failed").foregroundStyle(.red)
+                case .saved:
+                    if let date = model.lastSavedAt { Text("Saved \(date, style: .time)") }
+                }
+            }
+        }.font(.caption).foregroundStyle(.secondary)
+    }
+}
+
+struct PlaybackNotice: View {
+    let model: SessionModel
+    var body: some View {
+        if model.playbackMix.muted || model.playbackMix.volume == 0 {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Recording playback is silent", systemImage: "speaker.slash")
+                Button("Restore Playback Sound") {
+                    Task { await model.updatePlaybackMix(MixerChannelConfiguration(volume: model.playbackMix.volume == 0 ? 1 : model.playbackMix.volume, muted: false)) }
+                }.disabled(model.isBusy)
+            }
+        }
+        if model.monitoringEnabled && model.state == .running, case .playing = model.playbackState {
+            Text("Live monitoring is also on.").font(.caption).foregroundStyle(.secondary)
+        }
+    }
+}
+
+struct WorkspaceNotices: View {
+    let model: SessionModel
+    var body: some View {
+        if let error = model.errorMessage {
+            Text(error).foregroundStyle(.red).accessibilityIdentifier("workspace.error")
+        }
+        if let notice = model.storageNotice {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(notice).foregroundStyle(.secondary)
+                if model.saveStatus == .failed {
+                    Button("Retry Save") { Task { await model.saveCurrentSession() } }.disabled(model.isBusy)
+                }
+            }
+        }
     }
 }
