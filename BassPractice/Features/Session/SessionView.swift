@@ -19,7 +19,7 @@ struct SessionView: View {
                     Button("Save Session") { Task { await model.saveCurrentSession() } }
                     Spacer()
                     Button("New Session") { Task { await model.newSession() } }
-                }
+                }.buttonStyle(.borderless)
                 if let date = model.lastSavedAt { Text("Saved \(date, style: .time)").font(.caption).foregroundStyle(.secondary) }
                 if let notice = model.storageNotice { Text(notice).font(.caption).foregroundStyle(.secondary) }
             }.disabled(model.isBusy)
