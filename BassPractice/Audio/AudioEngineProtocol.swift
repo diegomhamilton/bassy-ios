@@ -4,10 +4,51 @@ protocol AudioEngineProtocol: AnyObject, Sendable {
     var state: AudioEngineState { get async }
     var monitoringEnabled: Bool { get async }
     var monitoringGain: Float { get async }
+    var diagnostics: AudioEngineDiagnostics? { get async }
 
     func start() async throws(AudioEngineFailure)
     func stop() async throws(AudioEngineFailure)
     func setMonitoring(enabled: Bool, gain: Float) async throws(AudioEngineFailure)
+}
+
+extension AudioEngineProtocol {
+    var diagnostics: AudioEngineDiagnostics? { get async { nil } }
+}
+
+struct AudioFormatDiagnostics: Equatable, Sendable {
+    let sampleRate: Double
+    let channelCount: UInt32
+    let sampleEncoding: String
+    let isInterleaved: Bool
+
+    init(sampleRate: Double, channelCount: UInt32, sampleEncoding: String, isInterleaved: Bool) {
+        self.sampleRate = sampleRate
+        self.channelCount = channelCount
+        self.sampleEncoding = sampleEncoding
+        self.isInterleaved = isInterleaved
+    }
+
+    init(audioFormat: AVAudioFormat) {
+        sampleRate = audioFormat.sampleRate
+        channelCount = audioFormat.channelCount
+        isInterleaved = audioFormat.isInterleaved
+        switch audioFormat.commonFormat {
+        case .pcmFormatFloat32: sampleEncoding = "Float32"
+        case .pcmFormatFloat64: sampleEncoding = "Float64"
+        case .pcmFormatInt16: sampleEncoding = "Int16"
+        case .pcmFormatInt32: sampleEncoding = "Int32"
+        case .otherFormat: sampleEncoding = "Other"
+        @unknown default: sampleEncoding = "Unknown"
+        }
+    }
+}
+
+struct AudioEngineDiagnostics: Equatable, Sendable {
+    let actualSessionSampleRate: Double
+    let inputChannelCount: UInt32
+    let inputFormat: AudioFormatDiagnostics
+    let outputFormat: AudioFormatDiagnostics
+    let actualIOBufferDuration: Double
 }
 
 enum AudioEngineState: Equatable, Sendable {
@@ -30,6 +71,7 @@ enum AudioEngineFailure: Error, Equatable, Sendable {
 
 protocol AudioEngineBackend: Sendable {
     var inputFormat: AudioEngineInputFormat { get }
+    var diagnosticFormats: (input: AudioFormatDiagnostics, output: AudioFormatDiagnostics)? { get }
 
     func resetGraph() throws
     func attachInstrumentMixer() throws
@@ -40,6 +82,10 @@ protocol AudioEngineBackend: Sendable {
     func prepare() throws
     func start() throws
     func stop()
+}
+
+extension AudioEngineBackend {
+    var diagnosticFormats: (input: AudioFormatDiagnostics, output: AudioFormatDiagnostics)? { nil }
 }
 
 struct AudioEngineInputFormat: Equatable, Sendable {
@@ -67,6 +113,13 @@ final class SystemAudioEngineBackend: AudioEngineBackend, @unchecked Sendable {
 
     var inputFormat: AudioEngineInputFormat {
         AudioEngineInputFormat(audioFormat: engine.inputNode.outputFormat(forBus: 0))
+    }
+
+    var diagnosticFormats: (input: AudioFormatDiagnostics, output: AudioFormatDiagnostics)? {
+        (
+            AudioFormatDiagnostics(audioFormat: engine.inputNode.outputFormat(forBus: 0)),
+            AudioFormatDiagnostics(audioFormat: engine.outputNode.inputFormat(forBus: 0))
+        )
     }
 
     init(
