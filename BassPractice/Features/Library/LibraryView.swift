@@ -36,7 +36,7 @@ struct LibraryView: View {
             if let error = workspace.errorMessage { Text(error).foregroundStyle(.red) }
         }
         .navigationTitle("Library")
-        .task { await reload() }
+        .task(id: workspace.lastSavedAt) { await reload() }
         .refreshable { await reload() }
         .sheet(item: $renaming) { session in
             NavigationStack {
@@ -62,7 +62,12 @@ struct LibraryView: View {
     }
 
     private func reload() async {
-        do { sessions = try await sessionRepository.sessions(); failure = nil }
+        do {
+            let stored = try await sessionRepository.sessions()
+            guard !Task.isCancelled else { return }
+            sessions = stored
+            failure = nil
+        }
         catch { failure = "Could not load saved sessions: \(error)" }
     }
 }
