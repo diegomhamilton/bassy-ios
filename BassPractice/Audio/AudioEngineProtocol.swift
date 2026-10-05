@@ -107,7 +107,7 @@ struct AudioEngineInputFormat: Equatable, Sendable {
     }
 }
 
-final class SystemAudioEngineBackend: AudioEngineBackend, @unchecked Sendable {
+final class SystemAudioEngineBackend: AudioCaptureBackend, AudioPlaybackBackend, @unchecked Sendable {
     private enum BackendError: Error {
         case missingAudioFormat
     }
@@ -120,6 +120,9 @@ final class SystemAudioEngineBackend: AudioEngineBackend, @unchecked Sendable {
     private lazy var instrumentChain = InstrumentProcessingChain(processors: [inputGain, equalizer])
     // A stable boundary for the future recorder, independent of chain contents or monitor mute.
     private let processedInstrument = AVAudioMixerNode()
+    private let playbackPlayer = AVAudioPlayerNode()
+    private let playbackMixer = AVAudioMixerNode()
+    private var recordingSink: AudioRecordingSink?
 
     var inputFormat: AudioEngineInputFormat {
         AudioEngineInputFormat(audioFormat: engine.inputNode.outputFormat(forBus: 0))
@@ -142,12 +145,17 @@ final class SystemAudioEngineBackend: AudioEngineBackend, @unchecked Sendable {
 
     func resetGraph() throws {
         engine.stop()
+        playbackPlayer.stop()
         engine.disconnectNodeOutput(engine.inputNode)
         instrumentChain.detach(from: engine)
-        for node in [processedInstrument, outputGain.node] as [AVAudioNode] where node.engine != nil {
+        for node in [processedInstrument, playbackMixer, outputGain.node] as [AVAudioNode] where node.engine != nil {
             engine.disconnectNodeInput(node)
             engine.disconnectNodeOutput(node)
             engine.detach(node)
+        }
+        if playbackPlayer.engine != nil {
+            engine.disconnectNodeOutput(playbackPlayer)
+            engine.detach(playbackPlayer)
         }
         if instrumentMixer.engine != nil {
             engine.disconnectNodeInput(instrumentMixer)
@@ -165,6 +173,8 @@ final class SystemAudioEngineBackend: AudioEngineBackend, @unchecked Sendable {
         instrumentChain.attach(to: engine)
         engine.attach(outputGain.node)
         engine.attach(processedInstrument)
+        engine.attach(playbackMixer)
+        engine.attach(playbackPlayer)
     }
 
     func connectInputToInstrument(format: AudioEngineInputFormat) throws {
@@ -179,11 +189,16 @@ final class SystemAudioEngineBackend: AudioEngineBackend, @unchecked Sendable {
 
     func connectInstrumentToMain() throws {
         engine.connect(instrumentMixer, to: engine.mainMixerNode, format: nil)
+        engine.connect(playbackPlayer, to: playbackMixer, format: nil)
+        engine.connect(playbackMixer, to: engine.mainMixerNode, format: nil)
     }
 
     func connectMainToOutput() throws {
-        engine.connect(engine.mainMixerNode, to: outputGain.node, format: nil)
-        engine.connect(outputGain.node, to: engine.outputNode, format: nil)
+        let format = engine.isInManualRenderingMode
+            ? engine.manualRenderingFormat
+            : engine.outputNode.inputFormat(forBus: 0)
+        engine.connect(engine.mainMixerNode, to: outputGain.node, format: format)
+        engine.connect(outputGain.node, to: engine.outputNode, format: format)
     }
 
     func setGain(_ configuration: GainConfiguration, for stage: GainStage) throws {
@@ -211,6 +226,39 @@ final class SystemAudioEngineBackend: AudioEngineBackend, @unchecked Sendable {
     }
 
     func stop() {
+        playbackPlayer.stop()
         engine.stop()
     }
+
+    func beginRecording(to fileURL: URL) throws(AudioRecordingFailure) {
+        guard recordingSink == nil else { throw .alreadyRecording }
+        let format = processedInstrument.outputFormat(forBus: 0)
+        let sink = try AudioRecordingSink(fileURL: fileURL, format: format)
+        recordingSink = sink
+        // Connected output format is retained; changing it here can invalidate the graph.
+        processedInstrument.installTap(onBus: 0, bufferSize: AVAudioFrameCount(max(4800, format.sampleRate * 0.1)), format: nil) { buffer, _ in
+            sink.consume(buffer)
+        }
+    }
+
+    func finishRecording() throws(AudioRecordingFailure) -> CapturedAudio {
+        guard let sink = recordingSink else { throw .notRecording }
+        processedInstrument.removeTap(onBus: 0)
+        recordingSink = nil
+        return try sink.finish()
+    }
+
+    func play(fileURL: URL, completion: @escaping @Sendable () async -> Void) throws(AudioPlaybackFailure) {
+        let file: AVAudioFile
+        do { file = try AVAudioFile(forReading: fileURL) } catch { throw .unreadableFile }
+        guard file.length > 0, file.processingFormat.sampleRate > 0, file.processingFormat.channelCount > 0 else { throw .invalidFormat }
+        playbackPlayer.stop()
+        engine.connect(playbackPlayer, to: playbackMixer, format: file.processingFormat)
+        // Preserve the file's channel layout until the main mixer performs hardware conversion.
+        engine.connect(playbackMixer, to: engine.mainMixerNode, format: file.processingFormat)
+        playbackPlayer.scheduleFile(file, at: nil, completionCallbackType: .dataPlayedBack) { _ in Task { await completion() } }
+        playbackPlayer.play()
+    }
+
+    func stopPlayback() { playbackPlayer.stop() }
 }

@@ -6,6 +6,10 @@ final class SessionModel {
     private let engine: any AudioEngineProtocol
     private let session: any AudioSessionManaging
     private let permission: any AudioRecordingPermission
+    private let files: (any AudioFileStore)?
+    private let recordingController: (any AudioRecordingControlling)?
+    private let playbackController: (any AudioPlaybackControlling)?
+    private let practiceSessionID = UUID()
     private(set) var state: AudioEngineState = .stopped
     private(set) var inputs: [AudioInput] = []
     private(set) var selectedInputID: String?
@@ -15,11 +19,17 @@ final class SessionModel {
     private(set) var monitoringGain: Float = 1
     private(set) var isBusy = false
     private(set) var errorMessage: String?
+    private(set) var recordingState: AudioRecordingState = .idle
+    private(set) var recordings: [Recording] = []
+    private(set) var playbackState: AudioPlaybackState = .stopped
 
-    init(engine: any AudioEngineProtocol, session: any AudioSessionManaging, permission: any AudioRecordingPermission = SystemAudioRecordingPermission()) {
+    init(engine: any AudioEngineProtocol, session: any AudioSessionManaging, permission: any AudioRecordingPermission = SystemAudioRecordingPermission(), files: (any AudioFileStore)? = nil) {
         self.engine = engine
         self.session = session
         self.permission = permission
+        self.files = files
+        recordingController = engine as? any AudioRecordingControlling
+        playbackController = engine as? any AudioPlaybackControlling
     }
 
     func observe() async {
@@ -39,6 +49,47 @@ final class SessionModel {
         diagnostics = await engine.diagnostics
         monitoringEnabled = await engine.monitoringEnabled
         monitoringGain = await engine.monitoringGain
+        recordingState = await recordingController?.recordingState ?? .idle
+        recordings = await recordingController?.recordings ?? []
+        playbackState = await playbackController?.playbackState ?? .stopped
+    }
+
+    func toggleRecording() async {
+        guard !isBusy else { return }
+        isBusy = true
+        defer { isBusy = false }
+        errorMessage = nil
+        guard let recordingController, let files else { errorMessage = "Recording storage is unavailable."; return }
+        do {
+            if case .recording = await recordingController.recordingState { _ = try await recordingController.stopRecording() }
+            else {
+                let id = UUID()
+                let fileURL = try files.recordingURL(sessionID: practiceSessionID, recordingID: id)
+                try await recordingController.startRecording(id: id, to: fileURL)
+            }
+        } catch { errorMessage = (error as? AudioRecordingFailure)?.message ?? "Recording storage is unavailable. Check available storage and try again." }
+        await refresh()
+    }
+
+    func playRecording(_ recording: Recording) async {
+        guard !isBusy else { return }
+        isBusy = true
+        defer { isBusy = false }
+        errorMessage = nil
+        guard let playbackController else { errorMessage = "Playback is unavailable."; return }
+        do {
+            if await engine.state != .running {
+                guard await permission.request() else { errorMessage = "Enable microphone access in Settings to start the audio engine."; return }
+                try await engine.start()
+            }
+            try await playbackController.play(recording)
+        } catch { errorMessage = (error as? AudioPlaybackFailure)?.message ?? "The audio engine could not start. Try again." }
+        await refresh()
+    }
+
+    func stopPlayback() async {
+        await playbackController?.stopPlayback()
+        await refresh()
     }
 
     func toggleRunning() async {

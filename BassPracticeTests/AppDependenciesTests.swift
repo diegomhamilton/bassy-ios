@@ -144,6 +144,10 @@ private enum TestDoubles {
     }
 
     struct AudioFileStore: BassPractice.AudioFileStore {
-        let rootDirectory = URL(fileURLWithPath: "/tmp/bass-practice-tests")
+        let rootDirectory: URL? = URL(fileURLWithPath: "/tmp/bass-practice-tests")
+        func recordingURL(sessionID: UUID, recordingID: UUID) throws(AudioFileStoreError) -> URL {
+            guard let rootDirectory else { throw .unavailable }
+            return rootDirectory.appendingPathComponent(recordingID.uuidString + ".caf")
+        }
     }
 }

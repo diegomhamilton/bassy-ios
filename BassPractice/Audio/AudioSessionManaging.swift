@@ -42,7 +42,7 @@ enum AudioSessionError: Error, Equatable, Sendable {
     case inputSelectionFailed(id: String?)
 }
 
-actor AudioControlActor: AudioSessionManaging, AudioEngineProtocol, AudioToneControlling {
+actor AudioControlActor: AudioSessionManaging, AudioEngineProtocol, AudioToneControlling, AudioRecordingControlling, AudioPlaybackControlling {
     private let backend: any AudioSessionBackend
     private let engineBackend: any AudioEngineBackend
     private let configuration: AudioSessionConfiguration
@@ -58,6 +58,10 @@ actor AudioControlActor: AudioSessionManaging, AudioEngineProtocol, AudioToneCon
     private var outputGain: GainConfiguration = .unity
     private(set) var equalizer: EQConfiguration = .flat
     private(set) var selectedProfileID: UUID? = BuiltInInputProfiles.customID
+    private(set) var recordingState: AudioRecordingState = .idle
+    private(set) var recordings: [Recording] = []
+    private(set) var playbackState: AudioPlaybackState = .stopped
+    private var playbackGeneration: UUID?
 
     private(set) var snapshot: AudioSessionSnapshot
     private(set) var currentRoute: AudioRoute
@@ -121,7 +125,7 @@ actor AudioControlActor: AudioSessionManaging, AudioEngineProtocol, AudioToneCon
         do {
             try configureGraph()
         } catch let failure {
-            engineBackend.stop()
+            stopMediaAndBackend()
             deactivateAfterFailedStart()
             state = .failed(failure)
             throw failure
@@ -131,7 +135,7 @@ actor AudioControlActor: AudioSessionManaging, AudioEngineProtocol, AudioToneCon
             try engineBackend.prepare()
         } catch {
             let failure = AudioEngineFailure.preparationFailed
-            engineBackend.stop()
+            stopMediaAndBackend()
             deactivateAfterFailedStart()
             state = .failed(failure)
             throw failure
@@ -141,7 +145,7 @@ actor AudioControlActor: AudioSessionManaging, AudioEngineProtocol, AudioToneCon
             try engineBackend.start()
         } catch {
             let failure = AudioEngineFailure.startFailed
-            engineBackend.stop()
+            stopMediaAndBackend()
             deactivateAfterFailedStart()
             state = .failed(failure)
             throw failure
@@ -242,6 +246,74 @@ actor AudioControlActor: AudioSessionManaging, AudioEngineProtocol, AudioToneCon
         monitoringEnabled ? monitoringGain : 0
     }
 
+    func startRecording(id: UUID, to fileURL: URL) throws(AudioRecordingFailure) {
+        guard state == .running else { throw .engineNotRunning }
+        if case .recording = recordingState { throw .alreadyRecording }
+        guard let capture = engineBackend as? any AudioCaptureBackend else { throw .unsupportedBackend }
+        do { try capture.beginRecording(to: fileURL) }
+        catch { recordingState = .failed(error); throw error }
+        recordingState = .recording(id: id, fileURL: fileURL, startedAt: Date())
+        publish(.mediaChanged)
+    }
+
+    @discardableResult func stopRecording() throws(AudioRecordingFailure) -> Recording {
+        guard case let .recording(id, fileURL, startedAt) = recordingState else { throw .notRecording }
+        guard let capture = engineBackend as? any AudioCaptureBackend else { throw .unsupportedBackend }
+        do {
+            let audio = try capture.finishRecording()
+            let recording = Recording(id: id, fileURL: fileURL, createdAt: startedAt, frameCount: audio.frameCount, sampleRate: audio.sampleRate, channelCount: audio.channelCount)
+            recordings.append(recording)
+            recordingState = .idle
+            publish(.mediaChanged)
+            return recording
+        } catch {
+            recordingState = .failed(error)
+            publish(.mediaChanged)
+            throw error
+        }
+    }
+
+    func play(_ recording: Recording) throws(AudioPlaybackFailure) {
+        guard state == .running else { throw .engineUnavailable }
+        guard let player = engineBackend as? any AudioPlaybackBackend else { throw .unsupportedBackend }
+        let id = recording.id
+        let generation = UUID()
+        playbackGeneration = generation
+        do {
+            try player.play(fileURL: recording.fileURL) { [weak self] in await self?.playbackCompleted(id: id, generation: generation) }
+            playbackState = .playing(id)
+            publish(.mediaChanged)
+        } catch {
+            playbackGeneration = nil
+            player.stopPlayback()
+            playbackState = .failed(error)
+            publish(.mediaChanged)
+            throw error
+        }
+    }
+
+    func stopPlayback() {
+        playbackGeneration = nil
+        playbackState = .stopped
+        (engineBackend as? any AudioPlaybackBackend)?.stopPlayback()
+        publish(.mediaChanged)
+    }
+
+    private func playbackCompleted(id: UUID, generation: UUID) {
+        guard playbackGeneration == generation, playbackState == .playing(id) else { return }
+        playbackGeneration = nil
+        playbackState = .stopped
+        publish(.mediaChanged)
+    }
+
+    private func stopMediaAndBackend() {
+        if case .recording = recordingState { _ = try? stopRecording() }
+        playbackState = .stopped
+        playbackGeneration = nil
+        (engineBackend as? any AudioPlaybackBackend)?.stopPlayback()
+        engineBackend.stop()
+    }
+
     func stop() throws(AudioEngineFailure) {
         resumeEngineAfterInterruption = false
         wasActiveBeforeInterruption = false
@@ -249,7 +321,7 @@ actor AudioControlActor: AudioSessionManaging, AudioEngineProtocol, AudioToneCon
             return
         }
 
-        engineBackend.stop()
+        stopMediaAndBackend()
 
         do throws(AudioSessionError) {
             if state == .interrupted && !snapshot.isActive {
@@ -408,7 +480,7 @@ actor AudioControlActor: AudioSessionManaging, AudioEngineProtocol, AudioToneCon
                 wasActiveBeforeInterruption = snapshot.isActive
                 resumeEngineAfterInterruption = state == .running
                 if resumeEngineAfterInterruption {
-                    engineBackend.stop()
+                    stopMediaAndBackend()
                     state = .interrupted
                 }
             }
@@ -458,7 +530,7 @@ actor AudioControlActor: AudioSessionManaging, AudioEngineProtocol, AudioToneCon
     }
 
     private func rebuildRunningEngine() {
-        engineBackend.stop()
+        stopMediaAndBackend()
         state = .stopped
         try? start()
     }
