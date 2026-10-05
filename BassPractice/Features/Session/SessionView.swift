@@ -15,6 +15,9 @@ struct SessionView: View {
                 Button(model.state == .running ? "Stop Audio" : "Start Audio") {
                     Task { await model.toggleRunning() }
                 }.disabled(model.isBusy)
+                if model.state == .interrupted {
+                    Button("Stop Audio") { Task { await model.stop() } }.disabled(model.isBusy)
+                }
                 Picker("Input", selection: Binding(
                     get: { model.selectedInputID },
                     set: { id in Task { await model.selectInput(id) } }

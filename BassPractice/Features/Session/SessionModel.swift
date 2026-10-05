@@ -59,6 +59,16 @@ final class SessionModel {
         await refresh()
     }
 
+    func stop() async {
+        guard !isBusy else { return }
+        isBusy = true
+        defer { isBusy = false }
+        errorMessage = nil
+        do { try await engine.stop() }
+        catch { errorMessage = String(describing: error) }
+        await refresh()
+    }
+
     func selectInput(_ id: String?) async {
         guard !isBusy, state != .running else { return }
         isBusy = true
