@@ -60,6 +60,7 @@ enum AudioEngineState: Equatable, Sendable {
 }
 
 enum AudioEngineFailure: Error, Equatable, Sendable {
+    case startUnavailableInBackground
     case sessionActivation(AudioSessionError)
     case invalidInputFormat(sampleRate: Double, channelCount: UInt32)
     case graphConfigurationFailed
