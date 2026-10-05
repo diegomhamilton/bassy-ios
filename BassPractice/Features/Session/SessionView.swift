@@ -5,8 +5,8 @@ struct SessionView: View {
     @State private var gain: Float = 1
     @State private var profiles: ProfileSelectionModel
 
-    init(audioEngine: any AudioEngineProtocol, audioSession: any AudioSessionManaging, toneController: any AudioToneControlling, profileRepository: any InputProfileRepository) {
-        _model = State(initialValue: SessionModel(engine: audioEngine, session: audioSession))
+    init(audioEngine: any AudioEngineProtocol, audioSession: any AudioSessionManaging, toneController: any AudioToneControlling, profileRepository: any InputProfileRepository, files: any AudioFileStore) {
+        _model = State(initialValue: SessionModel(engine: audioEngine, session: audioSession, files: files))
         _profiles = State(initialValue: ProfileSelectionModel(controller: toneController, repository: profileRepository))
     }
 
@@ -30,6 +30,26 @@ struct SessionView: View {
                 Text("Start and stop audio to discover inputs, then choose an input before starting again.").font(.caption).foregroundStyle(.secondary)
             }
             Section("Instrument Profile") { ProfilePicker(model: profiles) }
+            Section("Recording") {
+                if case let .recording(_, _, startedAt) = model.recordingState {
+                    Text("Recording since \(startedAt, style: .time)").foregroundStyle(.red)
+                    Button("Stop Recording") { Task { await model.toggleRecording() } }
+                } else {
+                    Button("Record Processed Instrument") { Task { await model.toggleRecording() } }
+                        .disabled(model.state != .running)
+                    Text("Start audio first. Live Monitoring can stay off while recording.").font(.caption).foregroundStyle(.secondary)
+                }
+                if case let .failed(failure) = model.recordingState { Text(failure.message).foregroundStyle(.red) }
+                ForEach(model.recordings) { recording in
+                    HStack {
+                        Text(recording.createdAt, style: .time)
+                        Spacer()
+                        Text(String(format: "%.1f s", recording.duration)).foregroundStyle(.secondary)
+                        Button("Play") { Task { await model.playRecording(recording) } }
+                    }
+                }
+                if case .playing = model.playbackState { Button("Stop Playback") { Task { await model.stopPlayback() } } }
+            }.disabled(model.isBusy)
             Section("Monitoring") {
                 Toggle("Live Monitoring", isOn: Binding(
                     get: { model.monitoringEnabled },

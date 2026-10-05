@@ -3,7 +3,7 @@ title: F4.1 — Recording Engine
 feature: F4.1
 version: V0.1
 phase: "Phase 4 — Recording"
-status: proposed
+status: hardware-review-pending
 tags:
   - feature-pr
   - v0-1
@@ -14,6 +14,8 @@ tags:
 [[../releases/v0-1|← V0.1]] · [[../implementation-plan|Plan index]]
 
 ## Task PR checklist
+
+Implemented at `81c4ac3`: CAF tap recording after the processing chain and before monitor volume, serialized start/stop/failure state, interruption/stop finalization, and Session recording/playback controls. Native playback streams through a separate mixer into output gain. Full scheme passed 109 logical /220 expanded cases. Physical capture/listening remain pending. CAF files persist on disk, but the current recording list is in memory; F7 session metadata/library persistence remains required for reopening after relaunch. See [checkpoint](../../snapshots/2026-10-05_F4-1_recording-playback/README.md).
 
 - [x] [[#Task PR F4.1.1 — Recorder abstraction|F4.1.1 — Recorder abstraction]]
 - [x] [[#Task PR F4.1.2 — Engine tap recording|F4.1.2 — Engine tap recording]]
