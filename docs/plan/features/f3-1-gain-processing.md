@@ -3,7 +3,7 @@ title: F3.1 — Gain Processing
 feature: F3.1
 version: V0.1
 phase: "Phase 3 — DSP V1"
-status: proposed
+status: hardware-review-pending
 tags:
   - feature-pr
   - v0-1
@@ -14,6 +14,8 @@ tags:
 [[../releases/v0-1|← V0.1]] · [[../implementation-plan|Plan index]]
 
 ## Task PR checklist
+
+Implementation checkpoint: `ce63bc2` on `codex/gain-processing`. Native input/output gain and independent bypass are exposed in Tone. Complete scheme: 87 logical /183 expanded cases passed. See [validation evidence](../../snapshots/2026-10-05_F2-foundation_F3-1-gain/README.md). Physical listening remains pending.
 
 - [x] [[#Task PR F3.1.1 — Processing node abstraction|F3.1.1 — Processing node abstraction]]
 - [x] [[#Task PR F3.1.2 — Input gain processor|F3.1.2 — Input gain processor]]

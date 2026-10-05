@@ -3,7 +3,7 @@ title: F2.1 — Input Profiles
 feature: F2.1
 version: V0.1
 phase: "Phase 2 — Instrument Profiles"
-status: proposed
+status: in-progress
 tags:
   - feature-pr
   - v0-1
@@ -18,7 +18,9 @@ tags:
 - [x] [[#Task PR F2.1.1 — Domain model|F2.1.1 — Domain model]]
 - [x] [[#Task PR F2.1.2 — Built-in profiles|F2.1.2 — Built-in profiles]]
 - [x] [[#Task PR F2.1.3 — Profile persistence|F2.1.3 — Profile persistence]]
-- [x] [[#Task PR F2.1.4 — Profile selector UI|F2.1.4 — Profile selector UI]]
+- [ ] [[#Task PR F2.1.4 — Profile selector UI|F2.1.4 — Profile selector UI]]
+
+Domain, neutral built-in catalog and custom-file persistence are implemented. Live profile selection remains pending native EQ and atomic gain/EQ application; the feature acceptance criteria are not yet met.
 
 ## Task PR F2.1.1 — Domain model
 

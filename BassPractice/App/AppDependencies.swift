@@ -3,6 +3,7 @@ import Foundation
 struct AppDependencies {
     let audioSession: any AudioSessionManaging
     let audioEngine: any AudioEngineProtocol
+    let gainController: any AudioGainControlling
     let sessionRepository: any SessionRepository
     let audioFileStore: any AudioFileStore
     let logger: AppLogger
@@ -15,6 +16,7 @@ struct AppDependencies {
         return AppDependencies(
             audioSession: audioControl,
             audioEngine: audioControl,
+            gainController: audioControl,
             sessionRepository: InMemorySessionRepository(),
             audioFileStore: LocalAudioFileStore(),
             logger: AppLogger()

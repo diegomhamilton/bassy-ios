@@ -16,6 +16,7 @@ struct AppDependenciesTests {
         let dependencies = AppDependencies(
             audioSession: audioSession,
             audioEngine: audioEngine,
+            gainController: audioEngine,
             sessionRepository: sessions,
             audioFileStore: files,
             logger: AppLogger()
@@ -99,7 +100,7 @@ private enum TestDoubles {
         }
     }
 
-    actor AudioEngine: AudioEngineProtocol {
+    actor AudioEngine: AudioEngineProtocol, AudioGainControlling {
         let state: AudioEngineState = .stopped
         let monitoringEnabled = false
         let monitoringGain: Float = 1
@@ -107,6 +108,12 @@ private enum TestDoubles {
         func start() {}
         func stop() {}
         func setMonitoring(enabled: Bool, gain: Float) {}
+        private var gains: [GainStage: GainConfiguration] = [:]
+        func gain(for stage: GainStage) -> GainConfiguration { gains[stage] ?? .unity }
+        func setGain(_ configuration: GainConfiguration, for stage: GainStage) throws(GainProcessingError) {
+            try NativeGainLimits.validate(configuration, stage: stage)
+            gains[stage] = configuration
+        }
     }
 
     final class SessionRepository: BassPractice.SessionRepository {

@@ -80,6 +80,7 @@ protocol AudioEngineBackend: Sendable {
     func connectInstrumentToMain() throws
     func connectMainToOutput() throws
     func setInstrumentMixerVolume(_ volume: Float) throws
+    func setGain(_ configuration: GainConfiguration, for stage: GainStage) throws
     func prepare() throws
     func start() throws
     func stop()
@@ -111,6 +112,8 @@ final class SystemAudioEngineBackend: AudioEngineBackend, @unchecked Sendable {
 
     private let engine: AVAudioEngine
     private let instrumentMixer: AVAudioMixerNode
+    private let inputGain = NativeGainProcessor(stage: .input)
+    private let outputGain = NativeGainProcessor(stage: .output)
 
     var inputFormat: AudioEngineInputFormat {
         AudioEngineInputFormat(audioFormat: engine.inputNode.outputFormat(forBus: 0))
@@ -134,6 +137,11 @@ final class SystemAudioEngineBackend: AudioEngineBackend, @unchecked Sendable {
     func resetGraph() throws {
         engine.stop()
         engine.disconnectNodeOutput(engine.inputNode)
+        for node in [inputGain.node, outputGain.node] where node.engine != nil {
+            engine.disconnectNodeInput(node)
+            engine.disconnectNodeOutput(node)
+            engine.detach(node)
+        }
         if instrumentMixer.engine != nil {
             engine.disconnectNodeInput(instrumentMixer)
             engine.disconnectNodeOutput(instrumentMixer)
@@ -147,6 +155,8 @@ final class SystemAudioEngineBackend: AudioEngineBackend, @unchecked Sendable {
 
     func attachInstrumentMixer() throws {
         engine.attach(instrumentMixer)
+        engine.attach(inputGain.node)
+        engine.attach(outputGain.node)
     }
 
     func connectInputToInstrument(format: AudioEngineInputFormat) throws {
@@ -157,9 +167,10 @@ final class SystemAudioEngineBackend: AudioEngineBackend, @unchecked Sendable {
         }
         engine.connect(
             engine.inputNode,
-            to: instrumentMixer,
+            to: inputGain.node,
             format: audioFormat
         )
+        engine.connect(inputGain.node, to: instrumentMixer, format: audioFormat)
     }
 
     func connectInstrumentToMain() throws {
@@ -167,7 +178,12 @@ final class SystemAudioEngineBackend: AudioEngineBackend, @unchecked Sendable {
     }
 
     func connectMainToOutput() throws {
-        engine.connect(engine.mainMixerNode, to: engine.outputNode, format: nil)
+        engine.connect(engine.mainMixerNode, to: outputGain.node, format: nil)
+        engine.connect(outputGain.node, to: engine.outputNode, format: nil)
+    }
+
+    func setGain(_ configuration: GainConfiguration, for stage: GainStage) throws {
+        try (stage == .input ? inputGain : outputGain).apply(configuration)
     }
 
     func setInstrumentMixerVolume(_ volume: Float) throws {
