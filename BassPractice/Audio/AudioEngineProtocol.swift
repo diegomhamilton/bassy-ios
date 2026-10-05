@@ -117,6 +117,9 @@ final class SystemAudioEngineBackend: AudioEngineBackend, @unchecked Sendable {
     private let inputGain = NativeGainProcessor(stage: .input)
     private let outputGain = NativeGainProcessor(stage: .output)
     private let equalizer = NativeEQProcessor()
+    private lazy var instrumentChain = InstrumentProcessingChain(processors: [inputGain, equalizer])
+    // A stable boundary for the future recorder, independent of chain contents or monitor mute.
+    private let processedInstrument = AVAudioMixerNode()
 
     var inputFormat: AudioEngineInputFormat {
         AudioEngineInputFormat(audioFormat: engine.inputNode.outputFormat(forBus: 0))
@@ -140,7 +143,8 @@ final class SystemAudioEngineBackend: AudioEngineBackend, @unchecked Sendable {
     func resetGraph() throws {
         engine.stop()
         engine.disconnectNodeOutput(engine.inputNode)
-        for node in [inputGain.node, equalizer.node, outputGain.node] where node.engine != nil {
+        instrumentChain.detach(from: engine)
+        for node in [processedInstrument, outputGain.node] as [AVAudioNode] where node.engine != nil {
             engine.disconnectNodeInput(node)
             engine.disconnectNodeOutput(node)
             engine.detach(node)
@@ -158,9 +162,9 @@ final class SystemAudioEngineBackend: AudioEngineBackend, @unchecked Sendable {
 
     func attachInstrumentMixer() throws {
         engine.attach(instrumentMixer)
-        engine.attach(inputGain.node)
+        instrumentChain.attach(to: engine)
         engine.attach(outputGain.node)
-        engine.attach(equalizer.node)
+        engine.attach(processedInstrument)
     }
 
     func connectInputToInstrument(format: AudioEngineInputFormat) throws {
@@ -169,13 +173,8 @@ final class SystemAudioEngineBackend: AudioEngineBackend, @unchecked Sendable {
               audioFormat.channelCount == format.channelCount else {
             throw BackendError.missingAudioFormat
         }
-        engine.connect(
-            engine.inputNode,
-            to: inputGain.node,
-            format: audioFormat
-        )
-        engine.connect(inputGain.node, to: equalizer.node, format: audioFormat)
-        engine.connect(equalizer.node, to: instrumentMixer, format: audioFormat)
+        instrumentChain.connect(in: engine, input: engine.inputNode, output: processedInstrument, format: audioFormat)
+        engine.connect(processedInstrument, to: instrumentMixer, format: audioFormat)
     }
 
     func connectInstrumentToMain() throws {
