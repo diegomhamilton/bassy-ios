@@ -42,8 +42,9 @@ enum EQDefaults {
 }
 
 /// Fixed capacity permits live changes without rebuilding the audio graph.
-final class NativeEQProcessor {
+final class NativeEQProcessor: NativeInstrumentProcessor {
     let node = AVAudioUnitEQ(numberOfBands: NativeEQLimits.maximumBands)
+    var audioNode: AVAudioNode { node }
 
     func apply(_ configuration: EQConfiguration, sampleRate: Double) throws(ToneProcessingError) {
         try NativeEQLimits.validate(configuration, sampleRate: sampleRate)

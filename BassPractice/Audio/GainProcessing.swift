@@ -3,7 +3,7 @@ import AVFoundation
 
 enum GainStage: String, CaseIterable, Hashable, Sendable { case input, output }
 
-struct GainConfiguration: Equatable, Sendable {
+struct GainConfiguration: Codable, Equatable, Sendable {
     let decibels: Float
     let bypassed: Bool
     static let unity = GainConfiguration(decibels: 0, bypassed: false)
@@ -30,8 +30,9 @@ enum NativeGainLimits {
 }
 
 /// Owned and accessed exclusively by the audio control actor in production.
-final class NativeGainProcessor {
+final class NativeGainProcessor: NativeInstrumentProcessor {
     let node = AVAudioUnitEQ(numberOfBands: 0)
+    var audioNode: AVAudioNode { node }
     let stage: GainStage
     init(stage: GainStage) { self.stage = stage }
     func apply(_ configuration: GainConfiguration) throws(GainProcessingError) {
