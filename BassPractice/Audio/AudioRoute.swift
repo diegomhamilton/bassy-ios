@@ -28,6 +28,8 @@ enum AudioRouteChangeReason: Equatable, Sendable {
 enum AudioSessionEvent: Equatable, Sendable {
     case mediaChanged
     case mixerChanged
+    case toneChanged
+    case workspaceChanged
     case routeChanged(route: AudioRoute, reason: AudioRouteChangeReason)
     case interruptionBegan
     case interruptionEnded(shouldResume: Bool)

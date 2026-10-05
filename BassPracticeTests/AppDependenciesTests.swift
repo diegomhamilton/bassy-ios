@@ -5,7 +5,7 @@ import Testing
 @Suite("App dependencies")
 struct AppDependenciesTests {
     @Test("Dependencies can be replaced with test doubles")
-    func dependenciesCanBeReplacedWithTestDoubles() async {
+    func dependenciesCanBeReplacedWithTestDoubles() async throws {
         // Arrange
         let audioSession = TestDoubles.AudioSession()
         let audioEngine = TestDoubles.AudioEngine()
@@ -26,7 +26,7 @@ struct AppDependenciesTests {
         // Assert
         #expect(dependencies.audioSession === audioSession)
         #expect(dependencies.audioEngine === audioEngine)
-        #expect(dependencies.sessionRepository.sessions() == sessions.result)
+        #expect(try await dependencies.sessionRepository.sessions() == sessions.result)
         #expect(dependencies.audioFileStore.rootDirectory == files.rootDirectory)
     }
 
@@ -135,12 +135,16 @@ private enum TestDoubles {
         }
     }
 
-    final class SessionRepository: BassPractice.SessionRepository {
-        let result = [PracticeSession(id: UUID(), name: "Test Session")]
+    actor SessionRepository: BassPractice.SessionRepository {
+        let result = [try! PracticeSession(name: "Test Session")]
 
         func sessions() -> [PracticeSession] {
             result
         }
+        func create(name: String) throws(SessionRepositoryError) -> PracticeSession { throw .unavailable }
+        func load(id: UUID) throws(SessionRepositoryError) -> PracticeSession { throw .notFound }
+        func save(_ session: PracticeSession) throws(SessionRepositoryError) { throw .unavailable }
+        func delete(id: UUID) throws(SessionRepositoryError) { throw .unavailable }
     }
 
     struct AudioFileStore: BassPractice.AudioFileStore {

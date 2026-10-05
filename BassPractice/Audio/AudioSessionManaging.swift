@@ -42,7 +42,7 @@ enum AudioSessionError: Error, Equatable, Sendable {
     case inputSelectionFailed(id: String?)
 }
 
-actor AudioControlActor: AudioSessionManaging, AudioEngineProtocol, AudioToneControlling, AudioRecordingControlling, AudioPlaybackControlling, AudioMixerControlling {
+actor AudioControlActor: AudioSessionManaging, AudioEngineProtocol, AudioToneControlling, AudioRecordingControlling, AudioPlaybackControlling, AudioMixerControlling, AudioWorkspaceControlling {
     private let backend: any AudioSessionBackend
     private let engineBackend: any AudioEngineBackend
     private let configuration: AudioSessionConfiguration
@@ -239,12 +239,14 @@ actor AudioControlActor: AudioSessionManaging, AudioEngineProtocol, AudioToneCon
         catch { throw .backendFailure }
         if stage == .input { inputGain = configuration; selectedProfileID = nil }
         else { outputGain = configuration }
+        publish(.toneChanged)
     }
 
     func setEqualizer(_ configuration: EQConfiguration) throws(ToneProcessingError) {
         try commitTone(inputGain: inputGain, equalizer: configuration)
         equalizer = configuration
         selectedProfileID = nil
+        publish(.toneChanged)
     }
 
     func applyProfile(_ profile: InputProfile) throws(ToneProcessingError) {
@@ -253,6 +255,39 @@ actor AudioControlActor: AudioSessionManaging, AudioEngineProtocol, AudioToneCon
         inputGain = gain
         equalizer = profile.eq
         selectedProfileID = profile.id
+        publish(.toneChanged)
+    }
+
+    func workspaceSnapshot() -> AudioWorkspaceSnapshot {
+        AudioWorkspaceSnapshot(audio: WorkspaceAudioConfiguration(inputGain: inputGain, outputGain: outputGain, equalizer: equalizer, instrumentMix: mixerConfiguration(for: .instrument), playbackMix: playbackMix, inputProfileID: selectedProfileID), recordings: recordings)
+    }
+
+    func restoreWorkspace(_ snapshot: AudioWorkspaceSnapshot) throws(AudioWorkspaceFailure) {
+        guard state == .stopped else { throw .engineRunning }
+        guard let workspace = engineBackend as? any AudioWorkspaceBackend else { throw .unsupportedBackend }
+        let configuration = snapshot.audio
+        let sampleRate = configuredInputFormat?.sampleRate ?? self.configuration.preferredSampleRate
+        do {
+            try NativeGainLimits.validate(configuration.inputGain, stage: .input)
+            try NativeGainLimits.validate(configuration.outputGain, stage: .output)
+            try NativeEQLimits.validate(configuration.equalizer, sampleRate: sampleRate)
+            for mix in [configuration.instrumentMix, configuration.playbackMix] {
+                guard mix.volume.isFinite, (Float(0)...1).contains(mix.volume) else { throw AudioWorkspaceFailure.invalidConfiguration }
+            }
+        } catch { throw .invalidConfiguration }
+        do { try workspace.applyWorkspace(configuration, sampleRate: sampleRate) }
+        catch { throw .backendFailure }
+        inputGain = configuration.inputGain
+        outputGain = configuration.outputGain
+        equalizer = configuration.equalizer
+        monitoringGain = configuration.instrumentMix.volume
+        monitoringEnabled = !configuration.instrumentMix.muted
+        playbackMix = configuration.playbackMix
+        selectedProfileID = configuration.inputProfileID
+        recordings = snapshot.recordings
+        recordingState = .idle
+        playbackState = .stopped
+        publish(.workspaceChanged)
     }
 
     func profileSnapshot(name: String) throws(InputProfileValidationError) -> InputProfile {

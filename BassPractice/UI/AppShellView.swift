@@ -19,6 +19,7 @@ enum AppDestination: String, CaseIterable {
 struct AppShellView: View {
     let dependencies: AppDependencies
     @State private var selection: AppDestination
+    @State private var sessionModel: SessionModel
 
     init(
         dependencies: AppDependencies,
@@ -26,12 +27,13 @@ struct AppShellView: View {
     ) {
         self.dependencies = dependencies
         _selection = State(initialValue: initialDestination)
+        _sessionModel = State(initialValue: SessionModel(engine: dependencies.audioEngine, session: dependencies.audioSession, files: dependencies.audioFileStore, repository: dependencies.sessionRepository))
     }
 
     var body: some View {
         TabView(selection: $selection) {
             NavigationStack {
-                SessionView(audioEngine: dependencies.audioEngine, audioSession: dependencies.audioSession, toneController: dependencies.gainController, profileRepository: dependencies.profileRepository, files: dependencies.audioFileStore)
+                SessionView(model: sessionModel, toneController: dependencies.gainController, profileRepository: dependencies.profileRepository)
             }
             .tabItem {
                 Label("Session", systemImage: "waveform")
@@ -40,6 +42,7 @@ struct AppShellView: View {
 
             NavigationStack {
                 ToneView(controller: dependencies.gainController, profileRepository: dependencies.profileRepository)
+                    .id(sessionModel.practiceSessionID)
             }
             .tabItem {
                 Label("Tone", systemImage: "slider.horizontal.3")
@@ -47,13 +50,15 @@ struct AppShellView: View {
             .tag(AppDestination.tone)
 
             NavigationStack {
-                LibraryView(sessionRepository: dependencies.sessionRepository)
+                LibraryView(sessionRepository: dependencies.sessionRepository, workspace: sessionModel)
             }
             .tabItem {
                 Label("Library", systemImage: "music.note.list")
             }
             .tag(AppDestination.library)
         }
+        .task { await sessionModel.observe() }
+        .disabled(!sessionModel.isWorkspaceReady || sessionModel.isBusy)
     }
 }
 

@@ -107,7 +107,7 @@ struct AudioEngineInputFormat: Equatable, Sendable {
     }
 }
 
-final class SystemAudioEngineBackend: AudioCaptureBackend, AudioPlaybackBackend, AudioMixerBackend, @unchecked Sendable {
+final class SystemAudioEngineBackend: AudioCaptureBackend, AudioPlaybackBackend, AudioWorkspaceBackend, @unchecked Sendable {
     private enum BackendError: Error {
         case missingAudioFormat
     }
@@ -282,4 +282,18 @@ final class SystemAudioEngineBackend: AudioCaptureBackend, AudioPlaybackBackend,
     func stopPlayback() { playbackPlayer.stop() }
     func setPlaybackVolume(_ volume: Float) { playbackMixer.outputVolume = volume }
     func level(for channel: MixerChannel) -> AudioLevel { channel == .instrument ? instrumentTap.level : playbackTap.level }
+
+    func applyWorkspace(_ configuration: WorkspaceAudioConfiguration, sampleRate: Double) throws {
+        try NativeGainLimits.validate(configuration.inputGain, stage: .input)
+        try NativeGainLimits.validate(configuration.outputGain, stage: .output)
+        try NativeEQLimits.validate(configuration.equalizer, sampleRate: sampleRate)
+        for mix in [configuration.instrumentMix, configuration.playbackMix] {
+            guard mix.volume.isFinite, (Float(0)...1).contains(mix.volume) else { throw AudioWorkspaceFailure.invalidConfiguration }
+        }
+        try inputGain.apply(configuration.inputGain)
+        try outputGain.apply(configuration.outputGain)
+        equalizer.applyValidated(configuration.equalizer)
+        instrumentMixer.outputVolume = configuration.instrumentMix.muted ? 0 : configuration.instrumentMix.volume
+        playbackMixer.outputVolume = configuration.playbackMix.muted ? 0 : configuration.playbackMix.volume
+    }
 }

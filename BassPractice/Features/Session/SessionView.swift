@@ -6,13 +6,23 @@ struct SessionView: View {
     @State private var profiles: ProfileSelectionModel
     @State private var playbackVolume: Float = 1
 
-    init(audioEngine: any AudioEngineProtocol, audioSession: any AudioSessionManaging, toneController: any AudioToneControlling, profileRepository: any InputProfileRepository, files: any AudioFileStore) {
-        _model = State(initialValue: SessionModel(engine: audioEngine, session: audioSession, files: files))
+    init(model: SessionModel, toneController: any AudioToneControlling, profileRepository: any InputProfileRepository) {
+        _model = State(initialValue: model)
         _profiles = State(initialValue: ProfileSelectionModel(controller: toneController, repository: profileRepository))
     }
 
     var body: some View {
         Form {
+            Section("Practice Session") {
+                TextField("Session name", text: Binding(get: { model.sessionName }, set: { model.renameDraft($0) }))
+                HStack {
+                    Button("Save Session") { Task { await model.saveCurrentSession() } }
+                    Spacer()
+                    Button("New Session") { Task { await model.newSession() } }
+                }
+                if let date = model.lastSavedAt { Text("Saved \(date, style: .time)").font(.caption).foregroundStyle(.secondary) }
+                if let notice = model.storageNotice { Text(notice).font(.caption).foregroundStyle(.secondary) }
+            }.disabled(model.isBusy)
             Section("Audio") {
                 LabeledContent("State", value: stateLabel)
                 Button(model.state == .running ? "Stop Audio" : "Start Audio") {
@@ -105,8 +115,8 @@ struct SessionView: View {
             }
         }
         .navigationTitle("Session")
-        .task { await model.observe() }
         .task { await profiles.refresh() }
+        .onChange(of: model.practiceSessionID) { _, _ in Task { await profiles.refresh() } }
         .onChange(of: model.monitoringGain) { _, value in gain = value }
         .onChange(of: model.playbackMix.volume) { _, value in playbackVolume = value }
     }
