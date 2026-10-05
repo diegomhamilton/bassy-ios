@@ -31,7 +31,7 @@ struct AppShellView: View {
     var body: some View {
         TabView(selection: $selection) {
             NavigationStack {
-                SessionView(audioEngine: dependencies.audioEngine)
+                SessionView(audioEngine: dependencies.audioEngine, audioSession: dependencies.audioSession)
             }
             .tabItem {
                 Label("Session", systemImage: "waveform")

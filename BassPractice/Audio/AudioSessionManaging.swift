@@ -59,6 +59,17 @@ actor AudioControlActor: AudioSessionManaging, AudioEngineProtocol {
     private(set) var monitoringEnabled = false
     private(set) var monitoringGain: Float = 1
 
+    var diagnostics: AudioEngineDiagnostics? {
+        guard snapshot.isActive, let formats = engineBackend.diagnosticFormats else { return nil }
+        return AudioEngineDiagnostics(
+            actualSessionSampleRate: backend.sampleRate,
+            inputChannelCount: formats.input.channelCount,
+            inputFormat: formats.input,
+            outputFormat: formats.output,
+            actualIOBufferDuration: backend.ioBufferDuration
+        )
+    }
+
     init(
         backend: any AudioSessionBackend,
         engineBackend: any AudioEngineBackend = SystemAudioEngineBackend(),
@@ -252,6 +263,7 @@ actor AudioControlActor: AudioSessionManaging, AudioEngineProtocol {
             isActive: true
         )
         availableInputs = backend.availableInputs
+        currentRoute = backend.currentRoute
         return snapshot
     }
 

@@ -4,6 +4,183 @@ import Testing
 
 @Suite("Audio engine lifecycle")
 struct AudioEngineLifecycleTests {
+    @MainActor
+    @Test("Session input selection preserves stable identifiers and supports System Default")
+    func sessionInputSelectionUsesStableIdentifiers() async {
+        // Arrange
+        let recorder = TestDoubles.CommandRecorder()
+        let control = AudioControlActor(
+            backend: TestDoubles.AudioSessionBackend(recorder: recorder, inputs: [Fixtures.reviewInput]),
+            engineBackend: TestDoubles.AudioEngineBackend(recorder: recorder)
+        )
+        let model = SessionModel(engine: control, session: control, permission: TestDoubles.Permission(granted: true))
+
+        // Act
+        await model.selectInput(Fixtures.reviewInput.id)
+        let selectedID = model.selectedInputID
+        await model.selectInput(nil)
+
+        // Assert
+        #expect(selectedID == Fixtures.reviewInput.id)
+        #expect(model.inputs == [Fixtures.reviewInput])
+        #expect(model.selectedInputID == nil)
+        #expect(model.errorMessage == nil)
+    }
+
+    @MainActor
+    @Test("Unavailable input selection exposes the failure and retains the previously selected input")
+    func sessionInputSelectionFailureRetainsSelection() async {
+        // Arrange
+        let recorder = TestDoubles.CommandRecorder()
+        let control = AudioControlActor(
+            backend: TestDoubles.AudioSessionBackend(recorder: recorder, inputs: [Fixtures.reviewInput]),
+            engineBackend: TestDoubles.AudioEngineBackend(recorder: recorder)
+        )
+        let model = SessionModel(engine: control, session: control, permission: TestDoubles.Permission(granted: true))
+        await model.selectInput(Fixtures.reviewInput.id)
+
+        // Act
+        await model.selectInput("disconnected-port")
+
+        // Assert
+        #expect(model.selectedInputID == Fixtures.reviewInput.id)
+        #expect(model.errorMessage != nil)
+        #expect(!model.isBusy)
+    }
+
+    @MainActor
+    @Test("Monitoring write failure refreshes the committed controls and exposes the failure")
+    func sessionMonitoringFailureRetainsCommittedControls() async {
+        // Arrange
+        let recorder = TestDoubles.CommandRecorder()
+        let engine = TestDoubles.AudioEngineBackend(recorder: recorder)
+        let control = AudioControlActor(backend: TestDoubles.AudioSessionBackend(recorder: recorder), engineBackend: engine)
+        let model = SessionModel(engine: control, session: control, permission: TestDoubles.Permission(granted: true))
+        await model.setMonitoring(enabled: true, gain: 0.4)
+        engine.failsMixerVolumeWrite = true
+
+        // Act
+        await model.setMonitoring(enabled: true, gain: 0.8)
+
+        // Assert
+        #expect(model.monitoringEnabled)
+        #expect(model.monitoringGain == 0.4)
+        #expect(model.errorMessage != nil)
+        #expect(!model.isBusy)
+    }
+
+    @MainActor
+    @Test("Denied microphone access prevents session activation and exposes a Settings instruction")
+    func microphoneDenialPreventsStart() async {
+        // Arrange
+        let recorder = TestDoubles.CommandRecorder()
+        let control = AudioControlActor(
+            backend: TestDoubles.AudioSessionBackend(recorder: recorder),
+            engineBackend: TestDoubles.AudioEngineBackend(recorder: recorder)
+        )
+        let model = SessionModel(engine: control, session: control, permission: TestDoubles.Permission(granted: false))
+
+        // Act
+        await model.toggleRunning()
+
+        // Assert
+        #expect(recorder.commands.isEmpty)
+        #expect(model.state == .stopped)
+        #expect(model.errorMessage?.contains("Settings") == true)
+        #expect(!model.isBusy)
+    }
+    @Test("Diagnostics expose actual session values and distinct hardware input and output formats")
+    func diagnosticsReadActualValues() async throws {
+        // Arrange
+        let recorder = TestDoubles.CommandRecorder()
+        let control = AudioControlActor(
+            backend: TestDoubles.AudioSessionBackend(recorder: recorder),
+            engineBackend: TestDoubles.AudioEngineBackend(recorder: recorder),
+            configuration: AudioSessionConfiguration(preferredSampleRate: 96_000, preferredIOBufferDuration: 0.01)
+        )
+
+        // Act
+        try await control.start()
+        let diagnostics = await control.diagnostics
+
+        // Assert
+        #expect(diagnostics == AudioEngineDiagnostics(
+            actualSessionSampleRate: 48_000,
+            inputChannelCount: 1,
+            inputFormat: Fixtures.diagnosticInput,
+            outputFormat: Fixtures.diagnosticOutput,
+            actualIOBufferDuration: 0.00533
+        ))
+    }
+
+    @Test("Inactive sessions do not present stale diagnostics as current hardware values")
+    func inactiveDiagnosticsUnavailable() async throws {
+        // Arrange
+        let recorder = TestDoubles.CommandRecorder()
+        let control = AudioControlActor(
+            backend: TestDoubles.AudioSessionBackend(recorder: recorder),
+            engineBackend: TestDoubles.AudioEngineBackend(recorder: recorder)
+        )
+        try await control.start()
+
+        // Act
+        try await control.stop()
+        let diagnostics = await control.diagnostics
+
+        // Assert
+        #expect(diagnostics == nil)
+    }
+
+    @MainActor
+    @Test("Session controls start and stop audio and refresh observable diagnostics and monitoring")
+    func sessionControlsReflectAudioState() async {
+        // Arrange
+        let recorder = TestDoubles.CommandRecorder()
+        let control = AudioControlActor(
+            backend: TestDoubles.AudioSessionBackend(recorder: recorder),
+            engineBackend: TestDoubles.AudioEngineBackend(recorder: recorder)
+        )
+        let model = SessionModel(engine: control, session: control, permission: TestDoubles.Permission(granted: true))
+
+        // Act
+        await model.toggleRunning()
+        await model.setMonitoring(enabled: true, gain: 0.4)
+        let runningState = model.state
+        let runningDiagnostics = model.diagnostics
+        let monitoring = model.monitoringEnabled
+        let gain = model.monitoringGain
+        await model.toggleRunning()
+
+        // Assert
+        #expect(runningState == .running)
+        #expect(runningDiagnostics?.inputFormat == Fixtures.diagnosticInput)
+        #expect(monitoring)
+        #expect(gain == 0.4)
+        #expect(model.state == .stopped)
+        #expect(model.diagnostics == nil)
+        #expect(model.errorMessage == nil)
+    }
+
+    @MainActor
+    @Test("Session start failures are visible and release the busy state for an explicit retry")
+    func sessionControlsReportFailure() async {
+        // Arrange
+        let recorder = TestDoubles.CommandRecorder()
+        let control = AudioControlActor(
+            backend: TestDoubles.AudioSessionBackend(recorder: recorder, failsActivation: true),
+            engineBackend: TestDoubles.AudioEngineBackend(recorder: recorder)
+        )
+        let model = SessionModel(engine: control, session: control, permission: TestDoubles.Permission(granted: true))
+
+        // Act
+        await model.toggleRunning()
+
+        // Assert
+        #expect(model.state == .failed(.sessionActivation(.activationFailed)))
+        #expect(model.errorMessage != nil)
+        #expect(!model.isBusy)
+    }
+
     @Test("Start activates the session before preparing and starting the engine")
     func startOrdersLifecycleAndReachesRunning() async throws {
         // Arrange
@@ -389,6 +566,9 @@ struct AudioEngineLifecycleTests {
 }
 
 private enum Fixtures {
+    static let reviewInput = AudioInput(id: "stable-usb-port-id", name: "USB Instrument", portType: "USBAudio")
+    static let diagnosticInput = AudioFormatDiagnostics(sampleRate: 48_000, channelCount: 1, sampleEncoding: "Float32", isInterleaved: false)
+    static let diagnosticOutput = AudioFormatDiagnostics(sampleRate: 44_100, channelCount: 2, sampleEncoding: "Int16", isInterleaved: true)
     enum StartFailurePoint: Equatable, Sendable {
         case sessionActivation
         case enginePreparation
@@ -591,6 +771,10 @@ private enum Fixtures {
 }
 
 private enum TestDoubles {
+    struct Permission: AudioRecordingPermission {
+        let granted: Bool
+        func request() async -> Bool { granted }
+    }
     enum Command: Equatable, Sendable {
         case sessionConfigure
         case sessionPreferredSampleRate(Double)
@@ -646,7 +830,7 @@ private enum TestDoubles {
         let sampleRate = 48_000.0
         let ioBufferDuration: TimeInterval = 0.00533
         let currentRoute = AudioRoute.empty
-        let availableInputs: [AudioInput] = []
+        let availableInputs: [AudioInput]
         let events = AsyncStream<AudioSessionBackendEvent> { _ in }
 
         var failsDeactivation: Bool {
@@ -654,9 +838,10 @@ private enum TestDoubles {
             set { lock.withLock { shouldFailDeactivation = newValue } }
         }
 
-        init(recorder: CommandRecorder, failsActivation: Bool = false) {
+        init(recorder: CommandRecorder, failsActivation: Bool = false, inputs: [AudioInput] = []) {
             self.recorder = recorder
             self.failsActivation = failsActivation
+            availableInputs = inputs
         }
 
         func configureForMeasurement() {
@@ -730,6 +915,10 @@ private enum TestDoubles {
                 channelCount: format.channelCount
             ))
             return format
+        }
+
+        var diagnosticFormats: (input: AudioFormatDiagnostics, output: AudioFormatDiagnostics)? {
+            (Fixtures.diagnosticInput, Fixtures.diagnosticOutput)
         }
 
         var resetCount: Int { lock.withLock { graphResetCount } }
