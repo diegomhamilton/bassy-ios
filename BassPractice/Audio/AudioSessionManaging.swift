@@ -42,7 +42,7 @@ enum AudioSessionError: Error, Equatable, Sendable {
     case inputSelectionFailed(id: String?)
 }
 
-actor AudioControlActor: AudioSessionManaging, AudioEngineProtocol, AudioToneControlling, AudioRecordingControlling, AudioPlaybackControlling {
+actor AudioControlActor: AudioSessionManaging, AudioEngineProtocol, AudioToneControlling, AudioRecordingControlling, AudioPlaybackControlling, AudioMixerControlling {
     private let backend: any AudioSessionBackend
     private let engineBackend: any AudioEngineBackend
     private let configuration: AudioSessionConfiguration
@@ -62,6 +62,7 @@ actor AudioControlActor: AudioSessionManaging, AudioEngineProtocol, AudioToneCon
     private(set) var recordings: [Recording] = []
     private(set) var playbackState: AudioPlaybackState = .stopped
     private var playbackGeneration: UUID?
+    private var playbackMix = MixerChannelConfiguration(volume: 1, muted: false)
 
     private(set) var snapshot: AudioSessionSnapshot
     private(set) var currentRoute: AudioRoute
@@ -173,6 +174,7 @@ actor AudioControlActor: AudioSessionManaging, AudioEngineProtocol, AudioToneCon
             try engineBackend.setInstrumentMixerVolume(effectiveMonitoringVolume)
             try engineBackend.setTone(inputGain: inputGain, equalizer: equalizer, sampleRate: inputFormat.sampleRate)
             try engineBackend.setGain(outputGain, for: .output)
+            if let mixer = engineBackend as? any AudioMixerBackend { try mixer.setPlaybackVolume(playbackMix.muted ? 0 : playbackMix.volume) }
             configuredInputFormat = inputFormat
             configuredOutputFormat = engineBackend.diagnosticFormats?.output
         } catch {
@@ -181,6 +183,7 @@ actor AudioControlActor: AudioSessionManaging, AudioEngineProtocol, AudioToneCon
     }
 
     func setMonitoring(enabled: Bool, gain: Float) throws(AudioEngineFailure) {
+        guard gain.isFinite else { throw .monitoringConfigurationFailed }
         let clampedGain = min(max(gain, 0), 1)
         let previousVolume = effectiveMonitoringVolume
         let requestedVolume = enabled ? clampedGain : 0
@@ -199,6 +202,30 @@ actor AudioControlActor: AudioSessionManaging, AudioEngineProtocol, AudioToneCon
 
         monitoringEnabled = enabled
         monitoringGain = clampedGain
+        publish(.mixerChanged)
+    }
+
+    func mixerConfiguration(for channel: MixerChannel) -> MixerChannelConfiguration {
+        channel == .instrument ? MixerChannelConfiguration(volume: monitoringGain, muted: !monitoringEnabled) : playbackMix
+    }
+
+    func setMixerConfiguration(_ configuration: MixerChannelConfiguration, for channel: MixerChannel) throws(AudioMixerFailure) {
+        guard configuration.volume.isFinite, (Float(0)...1).contains(configuration.volume) else { throw .invalidVolume }
+        if channel == .instrument {
+            do { try setMonitoring(enabled: !configuration.muted, gain: configuration.volume) }
+            catch { throw .writeFailed }
+        } else {
+            guard let mixer = engineBackend as? any AudioMixerBackend else { throw .unsupportedBackend }
+            do { try mixer.setPlaybackVolume(configuration.muted ? 0 : configuration.volume) }
+            catch { throw .writeFailed }
+            playbackMix = configuration
+            publish(.mixerChanged)
+        }
+    }
+
+    func level(for channel: MixerChannel) -> AudioLevel? {
+        guard state == .running else { return .silent }
+        return (engineBackend as? any AudioMixerBackend)?.level(for: channel)
     }
 
     func gain(for stage: GainStage) -> GainConfiguration {

@@ -4,6 +4,7 @@ struct SessionView: View {
     @State private var model: SessionModel
     @State private var gain: Float = 1
     @State private var profiles: ProfileSelectionModel
+    @State private var playbackVolume: Float = 1
 
     init(audioEngine: any AudioEngineProtocol, audioSession: any AudioSessionManaging, toneController: any AudioToneControlling, profileRepository: any InputProfileRepository, files: any AudioFileStore) {
         _model = State(initialValue: SessionModel(engine: audioEngine, session: audioSession, files: files))
@@ -50,6 +51,25 @@ struct SessionView: View {
                 }
                 if case .playing = model.playbackState { Button("Stop Playback") { Task { await model.stopPlayback() } } }
             }.disabled(model.isBusy)
+            Section("Playback Mix") {
+                Toggle("Mute Playback", isOn: Binding(
+                    get: { model.playbackMix.muted },
+                    set: { value in Task { await model.updatePlaybackMix(MixerChannelConfiguration(volume: model.playbackMix.volume, muted: value)) } }
+                ))
+                LabeledContent("Volume", value: "\(Int(playbackVolume * 100))%")
+                Slider(value: $playbackVolume, in: 0...1) { editing in
+                    if !editing { Task { await model.updatePlaybackMix(MixerChannelConfiguration(volume: playbackVolume, muted: model.playbackMix.muted)); playbackVolume = model.playbackMix.volume } }
+                }
+            }.disabled(model.isBusy)
+            Section("Source Levels") {
+                TimelineView(.periodic(from: .now, by: 0.2)) { context in
+                    VStack(alignment: .leading) {
+                        levelRow("Instrument", level: model.instrumentLevel)
+                        levelRow("Playback", level: model.playbackLevel)
+                    }.task(id: context.date) { await model.refreshLevels() }
+                }
+                Text("Levels are measured before each source volume/mute. A muted source can still show signal.").font(.caption).foregroundStyle(.secondary)
+            }
             Section("Monitoring") {
                 Toggle("Live Monitoring", isOn: Binding(
                     get: { model.monitoringEnabled },
@@ -88,6 +108,7 @@ struct SessionView: View {
         .task { await model.observe() }
         .task { await profiles.refresh() }
         .onChange(of: model.monitoringGain) { _, value in gain = value }
+        .onChange(of: model.playbackMix.volume) { _, value in playbackVolume = value }
     }
 
     private var stateLabel: String {
@@ -97,6 +118,18 @@ struct SessionView: View {
         case .running: "Running"
         case .interrupted: "Interrupted"
         case .failed: "Failed"
+        }
+    }
+
+    private func levelRow(_ title: String, level: AudioLevel?) -> some View {
+        VStack(alignment: .leading) {
+            HStack {
+                Text(title)
+                Spacer()
+                Text(level.map { $0.clipping ? "Clipping" : ($0.peak > 0.0001 ? "Signal" : "No Signal") } ?? "Unavailable")
+                    .foregroundStyle(level?.clipping == true ? .red : .secondary)
+            }
+            ProgressView(value: Double(min(level?.peak ?? 0, 1)))
         }
     }
 

@@ -107,7 +107,7 @@ struct AudioEngineInputFormat: Equatable, Sendable {
     }
 }
 
-final class SystemAudioEngineBackend: AudioCaptureBackend, AudioPlaybackBackend, @unchecked Sendable {
+final class SystemAudioEngineBackend: AudioCaptureBackend, AudioPlaybackBackend, AudioMixerBackend, @unchecked Sendable {
     private enum BackendError: Error {
         case missingAudioFormat
     }
@@ -123,6 +123,9 @@ final class SystemAudioEngineBackend: AudioCaptureBackend, AudioPlaybackBackend,
     private let playbackPlayer = AVAudioPlayerNode()
     private let playbackMixer = AVAudioMixerNode()
     private var recordingSink: AudioRecordingSink?
+    private let instrumentTap = AudioTapState()
+    private let playbackTap = AudioTapState()
+    private var meterTapsInstalled = false
 
     var inputFormat: AudioEngineInputFormat {
         AudioEngineInputFormat(audioFormat: engine.inputNode.outputFormat(forBus: 0))
@@ -146,6 +149,13 @@ final class SystemAudioEngineBackend: AudioCaptureBackend, AudioPlaybackBackend,
     func resetGraph() throws {
         engine.stop()
         playbackPlayer.stop()
+        if meterTapsInstalled {
+            processedInstrument.removeTap(onBus: 0)
+            playbackMixer.removeTap(onBus: 0)
+            meterTapsInstalled = false
+        }
+        instrumentTap.reset()
+        playbackTap.reset()
         engine.disconnectNodeOutput(engine.inputNode)
         instrumentChain.detach(from: engine)
         for node in [processedInstrument, playbackMixer, outputGain.node] as [AVAudioNode] where node.engine != nil {
@@ -199,6 +209,16 @@ final class SystemAudioEngineBackend: AudioCaptureBackend, AudioPlaybackBackend,
             : engine.outputNode.inputFormat(forBus: 0)
         engine.connect(engine.mainMixerNode, to: outputGain.node, format: format)
         engine.connect(outputGain.node, to: engine.outputNode, format: format)
+        if !meterTapsInstalled {
+            let instrumentObserver = instrumentTap
+            let playbackObserver = playbackTap
+            let instrumentGeneration = instrumentObserver.beginObservation()
+            let playbackGeneration = playbackObserver.beginObservation()
+            let inputRate = processedInstrument.outputFormat(forBus: 0).sampleRate
+            processedInstrument.installTap(onBus: 0, bufferSize: AVAudioFrameCount(max(1, inputRate * 0.1)), format: nil) { buffer, _ in instrumentObserver.consume(buffer, generation: instrumentGeneration) }
+            playbackMixer.installTap(onBus: 0, bufferSize: AVAudioFrameCount(max(1, format.sampleRate * 0.1)), format: nil) { buffer, _ in playbackObserver.consume(buffer, generation: playbackGeneration) }
+            meterTapsInstalled = true
+        }
     }
 
     func setGain(_ configuration: GainConfiguration, for stage: GainStage) throws {
@@ -228,6 +248,8 @@ final class SystemAudioEngineBackend: AudioCaptureBackend, AudioPlaybackBackend,
     func stop() {
         playbackPlayer.stop()
         engine.stop()
+        instrumentTap.reset()
+        playbackTap.reset()
     }
 
     func beginRecording(to fileURL: URL) throws(AudioRecordingFailure) {
@@ -235,15 +257,12 @@ final class SystemAudioEngineBackend: AudioCaptureBackend, AudioPlaybackBackend,
         let format = processedInstrument.outputFormat(forBus: 0)
         let sink = try AudioRecordingSink(fileURL: fileURL, format: format)
         recordingSink = sink
-        // Connected output format is retained; changing it here can invalidate the graph.
-        processedInstrument.installTap(onBus: 0, bufferSize: AVAudioFrameCount(max(4800, format.sampleRate * 0.1)), format: nil) { buffer, _ in
-            sink.consume(buffer)
-        }
+        instrumentTap.setSink(sink)
     }
 
     func finishRecording() throws(AudioRecordingFailure) -> CapturedAudio {
         guard let sink = recordingSink else { throw .notRecording }
-        processedInstrument.removeTap(onBus: 0)
+        instrumentTap.setSink(nil)
         recordingSink = nil
         return try sink.finish()
     }
@@ -261,4 +280,6 @@ final class SystemAudioEngineBackend: AudioCaptureBackend, AudioPlaybackBackend,
     }
 
     func stopPlayback() { playbackPlayer.stop() }
+    func setPlaybackVolume(_ volume: Float) { playbackMixer.outputVolume = volume }
+    func level(for channel: MixerChannel) -> AudioLevel { channel == .instrument ? instrumentTap.level : playbackTap.level }
 }

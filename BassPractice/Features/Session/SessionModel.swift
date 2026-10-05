@@ -9,6 +9,7 @@ final class SessionModel {
     private let files: (any AudioFileStore)?
     private let recordingController: (any AudioRecordingControlling)?
     private let playbackController: (any AudioPlaybackControlling)?
+    private let mixer: (any AudioMixerControlling)?
     private let practiceSessionID = UUID()
     private(set) var state: AudioEngineState = .stopped
     private(set) var inputs: [AudioInput] = []
@@ -22,6 +23,9 @@ final class SessionModel {
     private(set) var recordingState: AudioRecordingState = .idle
     private(set) var recordings: [Recording] = []
     private(set) var playbackState: AudioPlaybackState = .stopped
+    private(set) var playbackMix = MixerChannelConfiguration(volume: 1, muted: false)
+    private(set) var instrumentLevel: AudioLevel?
+    private(set) var playbackLevel: AudioLevel?
 
     init(engine: any AudioEngineProtocol, session: any AudioSessionManaging, permission: any AudioRecordingPermission = SystemAudioRecordingPermission(), files: (any AudioFileStore)? = nil) {
         self.engine = engine
@@ -30,6 +34,7 @@ final class SessionModel {
         self.files = files
         recordingController = engine as? any AudioRecordingControlling
         playbackController = engine as? any AudioPlaybackControlling
+        mixer = engine as? any AudioMixerControlling
     }
 
     func observe() async {
@@ -52,6 +57,7 @@ final class SessionModel {
         recordingState = await recordingController?.recordingState ?? .idle
         recordings = await recordingController?.recordings ?? []
         playbackState = await playbackController?.playbackState ?? .stopped
+        playbackMix = await mixer?.mixerConfiguration(for: .playback) ?? MixerChannelConfiguration(volume: 1, muted: false)
     }
 
     func toggleRecording() async {
@@ -90,6 +96,21 @@ final class SessionModel {
     func stopPlayback() async {
         await playbackController?.stopPlayback()
         await refresh()
+    }
+
+    func updatePlaybackMix(_ configuration: MixerChannelConfiguration) async {
+        guard !isBusy, let mixer else { return }
+        isBusy = true
+        defer { isBusy = false }
+        errorMessage = nil
+        do { try await mixer.setMixerConfiguration(configuration, for: .playback) }
+        catch { errorMessage = "Could not change playback volume. The previous setting was retained." }
+        await refresh()
+    }
+
+    func refreshLevels() async {
+        instrumentLevel = await mixer?.level(for: .instrument)
+        playbackLevel = await mixer?.level(for: .playback)
     }
 
     func toggleRunning() async {
