@@ -4,6 +4,27 @@ import Testing
 
 @Suite("Audio engine recovery")
 struct AudioEngineRecoveryTests {
+    @Test("Interrupted Stop maps backend deactivation failure to a typed engine failure")
+    func interruptedStopDeactivationFailureIsTyped() async throws {
+        // Arrange
+        let session = TestDoubles.Session()
+        let engine = TestDoubles.Engine()
+        let control = AudioControlActor(backend: session, engineBackend: engine)
+        try await control.start()
+        var events = await control.events().makeAsyncIterator()
+        session.send(.interruptionBegan)
+        _ = await events.next()
+        session.failDeactivation = true
+        var failure: AudioEngineFailure?
+
+        // Act
+        do { try await control.stop() } catch { failure = error }
+
+        // Assert
+        #expect(failure == .sessionDeactivation(.deactivationFailed))
+        #expect(await control.state == .failed(.sessionDeactivation(.deactivationFailed)))
+    }
+
     @Test("Stopped route changes reconcile inputs without starting audio")
     func stoppedRouteDoesNotStartAndDisconnectClearsStablePreference() async throws {
         // Arrange
@@ -315,10 +336,16 @@ private enum Fixtures {
 
 private enum TestDoubles {
     final class Session: AudioSessionBackend, @unchecked Sendable {
+        enum Failure: Error { case requested }
         private let lock = NSLock()
         private var storedRoute = AudioRoute.empty
         private var storedDeactivations = 0
         private var storedInputs: [AudioInput] = []
+        private var storedFailDeactivation = false
+        var failDeactivation: Bool {
+            get { lock.withLock { storedFailDeactivation } }
+            set { lock.withLock { storedFailDeactivation = newValue } }
+        }
         private let continuation: AsyncStream<AudioSessionBackendEvent>.Continuation
         private let deactivationContinuation: AsyncStream<Void>.Continuation
         let events: AsyncStream<AudioSessionBackendEvent>
@@ -344,9 +371,10 @@ private enum TestDoubles {
         func configureForMeasurement() {}
         func setPreferredSampleRate(_ sampleRate: Double) {}
         func setPreferredIOBufferDuration(_ duration: TimeInterval) {}
-        func setActive(_ active: Bool, notifyOthersOnDeactivation: Bool) {
+        func setActive(_ active: Bool, notifyOthersOnDeactivation: Bool) throws {
             if !active {
                 lock.withLock { storedDeactivations += 1 }
+                if failDeactivation { throw Failure.requested }
                 deactivationContinuation.yield(())
             }
         }

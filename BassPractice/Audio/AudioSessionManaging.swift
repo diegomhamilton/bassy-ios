@@ -204,7 +204,7 @@ actor AudioControlActor: AudioSessionManaging, AudioEngineProtocol {
 
         engineBackend.stop()
 
-        do {
+        do throws(AudioSessionError) {
             if state == .interrupted && !snapshot.isActive {
                 do {
                     try backend.setActive(false, notifyOthersOnDeactivation: true)
