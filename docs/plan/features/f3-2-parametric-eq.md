@@ -3,7 +3,7 @@ title: F3.2 — Parametric EQ
 feature: F3.2
 version: V0.1
 phase: "Phase 3 — DSP V1"
-status: proposed
+status: hardware-review-pending
 tags:
   - feature-pr
   - v0-1
@@ -14,6 +14,8 @@ tags:
 [[../releases/v0-1|← V0.1]] · [[../implementation-plan|Plan index]]
 
 ## Task PR checklist
+
+Implemented at `8d859c7`: native parametric EQ with up to eight bands, Q-to-octave conversion, per-band enable/global bypass, distinct Bass/Guitar starting curves and Tone editor. Complete scheme: 96 logical /203 expanded cases passed; native sine-wave rendering verifies center-frequency boost/cut, bypass and Flat clearing. Physical listening remains pending; see [checkpoint](../../snapshots/2026-10-05_F2-1_F3-2_live-profiles/README.md).
 
 - [x] [[#Task PR F3.2.1 — EQ model|F3.2.1 — EQ model]]
 - [x] [[#Task PR F3.2.2 — EQ audio node|F3.2.2 — EQ audio node]]

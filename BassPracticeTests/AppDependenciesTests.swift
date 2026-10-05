@@ -17,6 +17,7 @@ struct AppDependenciesTests {
             audioSession: audioSession,
             audioEngine: audioEngine,
             gainController: audioEngine,
+            profileRepository: UnavailableInputProfileRepository(failure: .applicationSupportUnavailable),
             sessionRepository: sessions,
             audioFileStore: files,
             logger: AppLogger()
@@ -100,7 +101,7 @@ private enum TestDoubles {
         }
     }
 
-    actor AudioEngine: AudioEngineProtocol, AudioGainControlling {
+    actor AudioEngine: AudioEngineProtocol, AudioToneControlling {
         let state: AudioEngineState = .stopped
         let monitoringEnabled = false
         let monitoringGain: Float = 1
@@ -109,6 +110,24 @@ private enum TestDoubles {
         func stop() {}
         func setMonitoring(enabled: Bool, gain: Float) {}
         private var gains: [GainStage: GainConfiguration] = [:]
+        private(set) var equalizer: EQConfiguration = .flat
+        private(set) var selectedProfileID: UUID?
+        func setEqualizer(_ configuration: EQConfiguration) throws(ToneProcessingError) {
+            try NativeEQLimits.validate(configuration, sampleRate: 48_000)
+            equalizer = configuration
+            selectedProfileID = nil
+        }
+        func applyProfile(_ profile: InputProfile) throws(ToneProcessingError) {
+            try NativeEQLimits.validate(profile.eq, sampleRate: 48_000)
+            guard NativeGainLimits.range.contains(profile.inputGainDecibels) else { throw .unsupportedInputGain(profile.inputGainDecibels) }
+            gains[.input] = GainConfiguration(decibels: profile.inputGainDecibels, bypassed: false)
+            equalizer = profile.eq
+            selectedProfileID = profile.id
+        }
+        func profileSnapshot(name: String) throws(InputProfileValidationError) -> InputProfile {
+            let input = gains[.input] ?? .unity
+            return try InputProfile(name: name, instrument: .custom, inputGainDecibels: input.bypassed ? 0 : input.decibels, eq: equalizer)
+        }
         func gain(for stage: GainStage) -> GainConfiguration { gains[stage] ?? .unity }
         func setGain(_ configuration: GainConfiguration, for stage: GainStage) throws(GainProcessingError) {
             try NativeGainLimits.validate(configuration, stage: stage)

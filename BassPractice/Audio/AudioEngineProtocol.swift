@@ -81,6 +81,8 @@ protocol AudioEngineBackend: Sendable {
     func connectMainToOutput() throws
     func setInstrumentMixerVolume(_ volume: Float) throws
     func setGain(_ configuration: GainConfiguration, for stage: GainStage) throws
+    /// Must either apply the entire tone or throw without changing the committed processing.
+    func setTone(inputGain: GainConfiguration, equalizer: EQConfiguration, sampleRate: Double) throws
     func prepare() throws
     func start() throws
     func stop()
@@ -114,6 +116,7 @@ final class SystemAudioEngineBackend: AudioEngineBackend, @unchecked Sendable {
     private let instrumentMixer: AVAudioMixerNode
     private let inputGain = NativeGainProcessor(stage: .input)
     private let outputGain = NativeGainProcessor(stage: .output)
+    private let equalizer = NativeEQProcessor()
 
     var inputFormat: AudioEngineInputFormat {
         AudioEngineInputFormat(audioFormat: engine.inputNode.outputFormat(forBus: 0))
@@ -137,7 +140,7 @@ final class SystemAudioEngineBackend: AudioEngineBackend, @unchecked Sendable {
     func resetGraph() throws {
         engine.stop()
         engine.disconnectNodeOutput(engine.inputNode)
-        for node in [inputGain.node, outputGain.node] where node.engine != nil {
+        for node in [inputGain.node, equalizer.node, outputGain.node] where node.engine != nil {
             engine.disconnectNodeInput(node)
             engine.disconnectNodeOutput(node)
             engine.detach(node)
@@ -157,6 +160,7 @@ final class SystemAudioEngineBackend: AudioEngineBackend, @unchecked Sendable {
         engine.attach(instrumentMixer)
         engine.attach(inputGain.node)
         engine.attach(outputGain.node)
+        engine.attach(equalizer.node)
     }
 
     func connectInputToInstrument(format: AudioEngineInputFormat) throws {
@@ -170,7 +174,8 @@ final class SystemAudioEngineBackend: AudioEngineBackend, @unchecked Sendable {
             to: inputGain.node,
             format: audioFormat
         )
-        engine.connect(inputGain.node, to: instrumentMixer, format: audioFormat)
+        engine.connect(inputGain.node, to: equalizer.node, format: audioFormat)
+        engine.connect(equalizer.node, to: instrumentMixer, format: audioFormat)
     }
 
     func connectInstrumentToMain() throws {
@@ -184,6 +189,14 @@ final class SystemAudioEngineBackend: AudioEngineBackend, @unchecked Sendable {
 
     func setGain(_ configuration: GainConfiguration, for stage: GainStage) throws {
         try (stage == .input ? inputGain : outputGain).apply(configuration)
+    }
+
+    func setTone(inputGain: GainConfiguration, equalizer: EQConfiguration, sampleRate: Double) throws {
+        try NativeGainLimits.validate(inputGain, stage: .input)
+        try NativeEQLimits.validate(equalizer, sampleRate: sampleRate)
+        // AVAudioUnit parameter assignments are nonthrowing after all validation succeeds.
+        try self.inputGain.apply(inputGain)
+        self.equalizer.applyValidated(equalizer)
     }
 
     func setInstrumentMixerVolume(_ volume: Float) throws {

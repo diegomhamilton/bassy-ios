@@ -42,7 +42,7 @@ enum AudioSessionError: Error, Equatable, Sendable {
     case inputSelectionFailed(id: String?)
 }
 
-actor AudioControlActor: AudioSessionManaging, AudioEngineProtocol, AudioGainControlling {
+actor AudioControlActor: AudioSessionManaging, AudioEngineProtocol, AudioToneControlling {
     private let backend: any AudioSessionBackend
     private let engineBackend: any AudioEngineBackend
     private let configuration: AudioSessionConfiguration
@@ -56,6 +56,8 @@ actor AudioControlActor: AudioSessionManaging, AudioEngineProtocol, AudioGainCon
     private var isInBackground = false
     private var inputGain: GainConfiguration = .unity
     private var outputGain: GainConfiguration = .unity
+    private(set) var equalizer: EQConfiguration = .flat
+    private(set) var selectedProfileID: UUID? = BuiltInInputProfiles.customID
 
     private(set) var snapshot: AudioSessionSnapshot
     private(set) var currentRoute: AudioRoute
@@ -165,7 +167,7 @@ actor AudioControlActor: AudioSessionManaging, AudioEngineProtocol, AudioGainCon
             try engineBackend.connectInstrumentToMain()
             try engineBackend.connectMainToOutput()
             try engineBackend.setInstrumentMixerVolume(effectiveMonitoringVolume)
-            try engineBackend.setGain(inputGain, for: .input)
+            try engineBackend.setTone(inputGain: inputGain, equalizer: equalizer, sampleRate: inputFormat.sampleRate)
             try engineBackend.setGain(outputGain, for: .output)
             configuredInputFormat = inputFormat
             configuredOutputFormat = engineBackend.diagnosticFormats?.output
@@ -204,8 +206,36 @@ actor AudioControlActor: AudioSessionManaging, AudioEngineProtocol, AudioGainCon
         guard gain(for: stage) != configuration else { return }
         do { try engineBackend.setGain(configuration, for: stage) }
         catch { throw .backendFailure }
-        if stage == .input { inputGain = configuration }
+        if stage == .input { inputGain = configuration; selectedProfileID = nil }
         else { outputGain = configuration }
+    }
+
+    func setEqualizer(_ configuration: EQConfiguration) throws(ToneProcessingError) {
+        try commitTone(inputGain: inputGain, equalizer: configuration)
+        equalizer = configuration
+        selectedProfileID = nil
+    }
+
+    func applyProfile(_ profile: InputProfile) throws(ToneProcessingError) {
+        let gain = GainConfiguration(decibels: profile.inputGainDecibels, bypassed: false)
+        try commitTone(inputGain: gain, equalizer: profile.eq)
+        inputGain = gain
+        equalizer = profile.eq
+        selectedProfileID = profile.id
+    }
+
+    func profileSnapshot(name: String) throws(InputProfileValidationError) -> InputProfile {
+        try InputProfile(name: name, instrument: .custom, inputGainDecibels: inputGain.bypassed ? 0 : inputGain.decibels, eq: equalizer)
+    }
+
+    private func commitTone(inputGain: GainConfiguration, equalizer: EQConfiguration) throws(ToneProcessingError) {
+        let sampleRate = configuredInputFormat?.sampleRate ?? snapshot.actualSampleRate ?? configuration.preferredSampleRate
+        guard inputGain.decibels.isFinite, NativeGainLimits.range.contains(inputGain.decibels) else {
+            throw .unsupportedInputGain(inputGain.decibels)
+        }
+        try NativeEQLimits.validate(equalizer, sampleRate: sampleRate)
+        do { try engineBackend.setTone(inputGain: inputGain, equalizer: equalizer, sampleRate: sampleRate) }
+        catch { throw .backendFailure }
     }
 
     private var effectiveMonitoringVolume: Float {

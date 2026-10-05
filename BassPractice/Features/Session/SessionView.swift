@@ -3,9 +3,11 @@ import SwiftUI
 struct SessionView: View {
     @State private var model: SessionModel
     @State private var gain: Float = 1
+    @State private var profiles: ProfileSelectionModel
 
-    init(audioEngine: any AudioEngineProtocol, audioSession: any AudioSessionManaging) {
+    init(audioEngine: any AudioEngineProtocol, audioSession: any AudioSessionManaging, toneController: any AudioToneControlling, profileRepository: any InputProfileRepository) {
         _model = State(initialValue: SessionModel(engine: audioEngine, session: audioSession))
+        _profiles = State(initialValue: ProfileSelectionModel(controller: toneController, repository: profileRepository))
     }
 
     var body: some View {
@@ -27,6 +29,7 @@ struct SessionView: View {
                 }.disabled(model.isBusy || model.state == .running)
                 Text("Start and stop audio to discover inputs, then choose an input before starting again.").font(.caption).foregroundStyle(.secondary)
             }
+            Section("Instrument Profile") { ProfilePicker(model: profiles) }
             Section("Monitoring") {
                 Toggle("Live Monitoring", isOn: Binding(
                     get: { model.monitoringEnabled },
@@ -63,6 +66,7 @@ struct SessionView: View {
         }
         .navigationTitle("Session")
         .task { await model.observe() }
+        .task { await profiles.refresh() }
         .onChange(of: model.monitoringGain) { _, value in gain = value }
     }
 
