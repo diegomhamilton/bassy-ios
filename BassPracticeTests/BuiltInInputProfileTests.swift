@@ -16,7 +16,9 @@ struct BuiltInInputProfileTests {
         #expect(profile.name == testCase.name)
         #expect(profile.instrument == testCase.instrument)
         #expect(profile.inputGainDecibels == 0)
-        #expect(profile.eq == .flat)
+        #expect(profile.eq.bands.map(\.frequencyHertz) == testCase.frequencies)
+        #expect(profile.eq.bands.map(\.gainDecibels) == testCase.gains)
+        try NativeEQLimits.validate(profile.eq, sampleRate: 48_000)
     }
 
     @Test("The catalog exposes exactly three distinct profiles in Bass, Guitar, Custom order")
@@ -50,7 +52,7 @@ struct BuiltInInputProfileTests {
         #expect(copy.eq.bands == [band])
         #expect(unchangedSource == source)
         #expect(unchangedSource.inputGainDecibels == 0)
-        #expect(unchangedSource.eq == .flat)
+        #expect(unchangedSource.eq == source.eq)
     }
 }
 
@@ -59,10 +61,12 @@ private enum Fixtures {
         let id: String
         let name: String
         let instrument: InstrumentType
+        let frequencies: [Float]
+        let gains: [Float]
     }
     static let expectedProfiles = [
-        ExpectedProfile(id: "00000000-0000-0000-0000-000000000001", name: "Bass", instrument: .bass),
-        ExpectedProfile(id: "00000000-0000-0000-0000-000000000002", name: "Guitar", instrument: .guitar),
-        ExpectedProfile(id: "00000000-0000-0000-0000-000000000003", name: "Flat / Custom", instrument: .custom)
+        ExpectedProfile(id: "00000000-0000-0000-0000-000000000001", name: "Bass", instrument: .bass, frequencies: [80, 350, 1600], gains: [2, -1, 1]),
+        ExpectedProfile(id: "00000000-0000-0000-0000-000000000002", name: "Guitar", instrument: .guitar, frequencies: [120, 800, 3200], gains: [-2, 1, 2]),
+        ExpectedProfile(id: "00000000-0000-0000-0000-000000000003", name: "Flat / Custom", instrument: .custom, frequencies: [], gains: [])
     ]
 }

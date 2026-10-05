@@ -957,6 +957,12 @@ private enum TestDoubles {
             lock.withLock { storedGains[stage] = configuration }
         }
         private var storedGains: [GainStage: GainConfiguration] = [:]
+        private var storedEqualizer: EQConfiguration = .flat
+        func setTone(inputGain: GainConfiguration, equalizer: EQConfiguration, sampleRate: Double) throws {
+            try NativeGainLimits.validate(inputGain, stage: .input)
+            try NativeEQLimits.validate(equalizer, sampleRate: sampleRate)
+            lock.withLock { storedGains[.input] = inputGain; storedEqualizer = equalizer }
+        }
 
         func connectInputToInstrument(format: AudioEngineInputFormat) throws {
             try record(

@@ -43,6 +43,19 @@ struct EQBand: Codable, Equatable, Sendable {
 
 struct EQConfiguration: Codable, Equatable, Sendable {
     let bands: [EQBand]
+    let bypassed: Bool
+
+    init(bands: [EQBand], bypassed: Bool = false) {
+        self.bands = bands
+        self.bypassed = bypassed
+    }
+
+    private enum CodingKeys: String, CodingKey { case bands, bypassed }
+    init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        bands = try values.decode([EQBand].self, forKey: .bands)
+        bypassed = try values.decodeIfPresent(Bool.self, forKey: .bypassed) ?? false
+    }
 
     static let flat = EQConfiguration(bands: [])
 }
