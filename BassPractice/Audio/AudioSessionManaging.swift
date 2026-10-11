@@ -20,7 +20,9 @@ struct AudioSessionConfiguration: Equatable, Sendable {
 
     static let bassPractice = AudioSessionConfiguration(
         preferredSampleRate: 48_000,
-        preferredIOBufferDuration: 0.00533
+        // Zero means system-negotiated duration. Forced durations produced
+        // periodic silence on the built-in input of the physical test device.
+        preferredIOBufferDuration: 0
     )
 }
 
@@ -42,14 +44,27 @@ enum AudioSessionError: Error, Equatable, Sendable {
     case inputSelectionFailed(id: String?)
 }
 
-actor AudioControlActor: AudioSessionManaging, AudioEngineProtocol {
+actor AudioControlActor: AudioSessionManaging, AudioEngineProtocol, AudioToneControlling, AudioRecordingControlling, AudioPlaybackControlling, AudioMixerControlling, AudioWorkspaceControlling {
     private let backend: any AudioSessionBackend
     private let engineBackend: any AudioEngineBackend
     private let configuration: AudioSessionConfiguration
     private var eventContinuations: [UUID: AsyncStream<AudioSessionEvent>.Continuation] = [:]
     private var observationTask: Task<Void, Never>?
     private var wasActiveBeforeInterruption = false
+    private var interruptionInProgress = false
+    private var resumeEngineAfterInterruption = false
+    private var configuredInputFormat: AudioEngineInputFormat?
+    private var configuredOutputFormat: AudioFormatDiagnostics?
     private var isInBackground = false
+    private var inputGain: GainConfiguration = .unity
+    private var outputGain: GainConfiguration = .unity
+    private(set) var equalizer: EQConfiguration = .flat
+    private(set) var selectedProfileID: UUID? = BuiltInInputProfiles.customID
+    private(set) var recordingState: AudioRecordingState = .idle
+    private(set) var recordings: [Recording] = []
+    private(set) var playbackState: AudioPlaybackState = .stopped
+    private var playbackGeneration: UUID?
+    private var playbackMix = MixerChannelConfiguration(volume: 1, muted: false)
 
     private(set) var snapshot: AudioSessionSnapshot
     private(set) var currentRoute: AudioRoute
@@ -92,6 +107,9 @@ actor AudioControlActor: AudioSessionManaging, AudioEngineProtocol {
     }
 
     func start() throws(AudioEngineFailure) {
+        guard !isInBackground else {
+            throw .startUnavailableInBackground
+        }
         guard state != .running, state != .starting else {
             return
         }
@@ -110,7 +128,7 @@ actor AudioControlActor: AudioSessionManaging, AudioEngineProtocol {
         do {
             try configureGraph()
         } catch let failure {
-            engineBackend.stop()
+            stopMediaAndBackend()
             deactivateAfterFailedStart()
             state = .failed(failure)
             throw failure
@@ -120,7 +138,7 @@ actor AudioControlActor: AudioSessionManaging, AudioEngineProtocol {
             try engineBackend.prepare()
         } catch {
             let failure = AudioEngineFailure.preparationFailed
-            engineBackend.stop()
+            stopMediaAndBackend()
             deactivateAfterFailedStart()
             state = .failed(failure)
             throw failure
@@ -130,13 +148,14 @@ actor AudioControlActor: AudioSessionManaging, AudioEngineProtocol {
             try engineBackend.start()
         } catch {
             let failure = AudioEngineFailure.startFailed
-            engineBackend.stop()
+            stopMediaAndBackend()
             deactivateAfterFailedStart()
             state = .failed(failure)
             throw failure
         }
 
         state = .running
+        startObservationIfNeeded()
     }
 
     private func configureGraph() throws(AudioEngineFailure) {
@@ -155,12 +174,18 @@ actor AudioControlActor: AudioSessionManaging, AudioEngineProtocol {
             try engineBackend.connectInstrumentToMain()
             try engineBackend.connectMainToOutput()
             try engineBackend.setInstrumentMixerVolume(effectiveMonitoringVolume)
+            try engineBackend.setTone(inputGain: inputGain, equalizer: equalizer, sampleRate: inputFormat.sampleRate)
+            try engineBackend.setGain(outputGain, for: .output)
+            if let mixer = engineBackend as? any AudioMixerBackend { try mixer.setPlaybackVolume(playbackMix.muted ? 0 : playbackMix.volume) }
+            configuredInputFormat = inputFormat
+            configuredOutputFormat = engineBackend.diagnosticFormats?.output
         } catch {
             throw .graphConfigurationFailed
         }
     }
 
     func setMonitoring(enabled: Bool, gain: Float) throws(AudioEngineFailure) {
+        guard gain.isFinite else { throw .monitoringConfigurationFailed }
         let clampedGain = min(max(gain, 0), 1)
         let previousVolume = effectiveMonitoringVolume
         let requestedVolume = enabled ? clampedGain : 0
@@ -179,21 +204,199 @@ actor AudioControlActor: AudioSessionManaging, AudioEngineProtocol {
 
         monitoringEnabled = enabled
         monitoringGain = clampedGain
+        publish(.mixerChanged)
+    }
+
+    func mixerConfiguration(for channel: MixerChannel) -> MixerChannelConfiguration {
+        channel == .instrument ? MixerChannelConfiguration(volume: monitoringGain, muted: !monitoringEnabled) : playbackMix
+    }
+
+    func setMixerConfiguration(_ configuration: MixerChannelConfiguration, for channel: MixerChannel) throws(AudioMixerFailure) {
+        guard configuration.volume.isFinite, (Float(0)...1).contains(configuration.volume) else { throw .invalidVolume }
+        if channel == .instrument {
+            do { try setMonitoring(enabled: !configuration.muted, gain: configuration.volume) }
+            catch { throw .writeFailed }
+        } else {
+            guard let mixer = engineBackend as? any AudioMixerBackend else { throw .unsupportedBackend }
+            do { try mixer.setPlaybackVolume(configuration.muted ? 0 : configuration.volume) }
+            catch { throw .writeFailed }
+            playbackMix = configuration
+            publish(.mixerChanged)
+        }
+    }
+
+    func level(for channel: MixerChannel) -> AudioLevel? {
+        guard state == .running else { return .silent }
+        return (engineBackend as? any AudioMixerBackend)?.level(for: channel)
+    }
+
+    func gain(for stage: GainStage) -> GainConfiguration {
+        stage == .input ? inputGain : outputGain
+    }
+
+    func setGain(_ configuration: GainConfiguration, for stage: GainStage) throws(GainProcessingError) {
+        try NativeGainLimits.validate(configuration, stage: stage)
+        guard gain(for: stage) != configuration else { return }
+        do { try engineBackend.setGain(configuration, for: stage) }
+        catch { throw .backendFailure }
+        if stage == .input { inputGain = configuration; selectedProfileID = nil }
+        else { outputGain = configuration }
+        publish(.toneChanged)
+    }
+
+    func setEqualizer(_ configuration: EQConfiguration) throws(ToneProcessingError) {
+        try commitTone(inputGain: inputGain, equalizer: configuration)
+        equalizer = configuration
+        selectedProfileID = nil
+        publish(.toneChanged)
+    }
+
+    func applyProfile(_ profile: InputProfile) throws(ToneProcessingError) {
+        let gain = GainConfiguration(decibels: profile.inputGainDecibels, bypassed: false)
+        try commitTone(inputGain: gain, equalizer: profile.eq)
+        inputGain = gain
+        equalizer = profile.eq
+        selectedProfileID = profile.id
+        publish(.toneChanged)
+    }
+
+    func workspaceSnapshot() -> AudioWorkspaceSnapshot {
+        AudioWorkspaceSnapshot(audio: WorkspaceAudioConfiguration(inputGain: inputGain, outputGain: outputGain, equalizer: equalizer, instrumentMix: mixerConfiguration(for: .instrument), playbackMix: playbackMix, inputProfileID: selectedProfileID), recordings: recordings)
+    }
+
+    func restoreWorkspace(_ snapshot: AudioWorkspaceSnapshot) throws(AudioWorkspaceFailure) {
+        guard state == .stopped else { throw .engineRunning }
+        guard let workspace = engineBackend as? any AudioWorkspaceBackend else { throw .unsupportedBackend }
+        let configuration = snapshot.audio
+        let sampleRate = configuredInputFormat?.sampleRate ?? self.configuration.preferredSampleRate
+        do {
+            try NativeGainLimits.validate(configuration.inputGain, stage: .input)
+            try NativeGainLimits.validate(configuration.outputGain, stage: .output)
+            try NativeEQLimits.validate(configuration.equalizer, sampleRate: sampleRate)
+            for mix in [configuration.instrumentMix, configuration.playbackMix] {
+                guard mix.volume.isFinite, (Float(0)...1).contains(mix.volume) else { throw AudioWorkspaceFailure.invalidConfiguration }
+            }
+        } catch { throw .invalidConfiguration }
+        do { try workspace.applyWorkspace(configuration, sampleRate: sampleRate) }
+        catch { throw .backendFailure }
+        inputGain = configuration.inputGain
+        outputGain = configuration.outputGain
+        equalizer = configuration.equalizer
+        monitoringGain = configuration.instrumentMix.volume
+        monitoringEnabled = !configuration.instrumentMix.muted
+        playbackMix = configuration.playbackMix
+        selectedProfileID = configuration.inputProfileID
+        recordings = snapshot.recordings
+        recordingState = .idle
+        playbackState = .stopped
+        publish(.workspaceChanged)
+    }
+
+    func profileSnapshot(name: String) throws(InputProfileValidationError) -> InputProfile {
+        try InputProfile(name: name, instrument: .custom, inputGainDecibels: inputGain.bypassed ? 0 : inputGain.decibels, eq: equalizer)
+    }
+
+    private func commitTone(inputGain: GainConfiguration, equalizer: EQConfiguration) throws(ToneProcessingError) {
+        let sampleRate = configuredInputFormat?.sampleRate ?? snapshot.actualSampleRate ?? configuration.preferredSampleRate
+        guard inputGain.decibels.isFinite, NativeGainLimits.range.contains(inputGain.decibels) else {
+            throw .unsupportedInputGain(inputGain.decibels)
+        }
+        try NativeEQLimits.validate(equalizer, sampleRate: sampleRate)
+        do { try engineBackend.setTone(inputGain: inputGain, equalizer: equalizer, sampleRate: sampleRate) }
+        catch { throw .backendFailure }
     }
 
     private var effectiveMonitoringVolume: Float {
         monitoringEnabled ? monitoringGain : 0
     }
 
+    func startRecording(id: UUID, to fileURL: URL) throws(AudioRecordingFailure) {
+        guard state == .running else { throw .engineNotRunning }
+        if case .recording = recordingState { throw .alreadyRecording }
+        guard let capture = engineBackend as? any AudioCaptureBackend else { throw .unsupportedBackend }
+        do { try capture.beginRecording(to: fileURL) }
+        catch { recordingState = .failed(error); throw error }
+        recordingState = .recording(id: id, fileURL: fileURL, startedAt: Date())
+        publish(.mediaChanged)
+    }
+
+    @discardableResult func stopRecording() throws(AudioRecordingFailure) -> Recording {
+        guard case let .recording(id, fileURL, startedAt) = recordingState else { throw .notRecording }
+        guard let capture = engineBackend as? any AudioCaptureBackend else { throw .unsupportedBackend }
+        do {
+            let audio = try capture.finishRecording()
+            let recording = Recording(id: id, fileURL: fileURL, createdAt: startedAt, frameCount: audio.frameCount, sampleRate: audio.sampleRate, channelCount: audio.channelCount)
+            recordings.append(recording)
+            recordingState = .idle
+            publish(.mediaChanged)
+            return recording
+        } catch {
+            recordingState = .failed(error)
+            publish(.mediaChanged)
+            throw error
+        }
+    }
+
+    func play(_ recording: Recording) throws(AudioPlaybackFailure) {
+        guard state == .running else { throw .engineUnavailable }
+        guard let player = engineBackend as? any AudioPlaybackBackend else { throw .unsupportedBackend }
+        let id = recording.id
+        let generation = UUID()
+        playbackGeneration = generation
+        do {
+            try player.play(fileURL: recording.fileURL) { [weak self] in await self?.playbackCompleted(id: id, generation: generation) }
+            playbackState = .playing(id)
+            publish(.mediaChanged)
+        } catch {
+            playbackGeneration = nil
+            player.stopPlayback()
+            playbackState = .failed(error)
+            publish(.mediaChanged)
+            throw error
+        }
+    }
+
+    func stopPlayback() {
+        playbackGeneration = nil
+        playbackState = .stopped
+        (engineBackend as? any AudioPlaybackBackend)?.stopPlayback()
+        publish(.mediaChanged)
+    }
+
+    private func playbackCompleted(id: UUID, generation: UUID) {
+        guard playbackGeneration == generation, playbackState == .playing(id) else { return }
+        playbackGeneration = nil
+        playbackState = .stopped
+        publish(.mediaChanged)
+    }
+
+    private func stopMediaAndBackend() {
+        if case .recording = recordingState { _ = try? stopRecording() }
+        playbackState = .stopped
+        playbackGeneration = nil
+        (engineBackend as? any AudioPlaybackBackend)?.stopPlayback()
+        engineBackend.stop()
+    }
+
     func stop() throws(AudioEngineFailure) {
+        resumeEngineAfterInterruption = false
+        wasActiveBeforeInterruption = false
         guard state != .stopped else {
             return
         }
 
-        engineBackend.stop()
+        stopMediaAndBackend()
 
-        do {
-            try deactivate()
+        do throws(AudioSessionError) {
+            if state == .interrupted && !snapshot.isActive {
+                do {
+                    try backend.setActive(false, notifyOthersOnDeactivation: true)
+                } catch {
+                    throw AudioSessionError.deactivationFailed
+                }
+            } else {
+                try deactivate()
+            }
         } catch {
             let failure = AudioEngineFailure.sessionDeactivation(error)
             state = .failed(failure)
@@ -319,36 +522,81 @@ actor AudioControlActor: AudioSessionManaging, AudioEngineProtocol {
     ) {
         switch event {
         case let .routeChanged(reason):
+            let previousRoute = currentRoute
             currentRoute = backend.currentRoute
             availableInputs = backend.availableInputs
             reconcilePreferredInput(using: backend)
+            refreshActualSessionValues()
+            if state == .running,
+               previousRoute != currentRoute
+                || configuredInputFormat != engineBackend.inputFormat
+                || configuredOutputFormat != engineBackend.diagnosticFormats?.output {
+                rebuildRunningEngine()
+            }
             let routedEvent = AudioSessionEvent.routeChanged(
                 route: currentRoute,
                 reason: reason
             )
             publish(routedEvent)
         case .interruptionBegan:
-            wasActiveBeforeInterruption = snapshot.isActive
+            if !interruptionInProgress {
+                interruptionInProgress = true
+                wasActiveBeforeInterruption = snapshot.isActive
+                resumeEngineAfterInterruption = state == .running
+                if resumeEngineAfterInterruption {
+                    stopMediaAndBackend()
+                    state = .interrupted
+                }
+            }
             snapshot = snapshot.withActiveState(false)
             publish(.interruptionBegan)
         case let .interruptionEnded(shouldResume):
-            let shouldReactivate = shouldResume && wasActiveBeforeInterruption && !isInBackground
+            let shouldReactivate = interruptionInProgress && shouldResume && wasActiveBeforeInterruption && !isInBackground
+            let shouldRestartEngine = shouldReactivate && resumeEngineAfterInterruption
+            interruptionInProgress = false
             wasActiveBeforeInterruption = false
-            if shouldReactivate {
+            resumeEngineAfterInterruption = false
+            if shouldRestartEngine {
+                try? start()
+            } else if shouldReactivate {
                 _ = try? activate()
             }
             publish(.interruptionEnded(shouldResume: shouldResume))
         case .enteredBackground:
             isInBackground = true
-            try? deactivate()
+            resumeEngineAfterInterruption = false
+            wasActiveBeforeInterruption = false
+            if state != .stopped {
+                try? stop()
+            } else {
+                try? deactivate()
+            }
             publish(.enteredBackground)
         case .enteredForeground:
             isInBackground = false
             currentRoute = backend.currentRoute
             availableInputs = backend.availableInputs
             reconcilePreferredInput(using: backend)
+            refreshActualSessionValues()
             publish(.enteredForeground)
         }
+    }
+
+    private func refreshActualSessionValues() {
+        guard snapshot.isActive else { return }
+        snapshot = AudioSessionSnapshot(
+            requestedSampleRate: snapshot.requestedSampleRate,
+            requestedIOBufferDuration: snapshot.requestedIOBufferDuration,
+            actualSampleRate: backend.sampleRate,
+            actualIOBufferDuration: backend.ioBufferDuration,
+            isActive: true
+        )
+    }
+
+    private func rebuildRunningEngine() {
+        stopMediaAndBackend()
+        state = .stopped
+        try? start()
     }
 
     private func reconcilePreferredInput(using backend: any AudioSessionBackend) {
@@ -372,11 +620,10 @@ actor AudioControlActor: AudioSessionManaging, AudioEngineProtocol {
 
     private func removeEventContinuation(identifier: UUID) {
         eventContinuations[identifier] = nil
-        guard eventContinuations.isEmpty else {
-            return
-        }
+    }
+
+    deinit {
         observationTask?.cancel()
-        observationTask = nil
     }
 
     private func startObservationIfNeeded() {
@@ -509,7 +756,10 @@ final class SystemAudioSessionBackend: AudioSessionBackend, @unchecked Sendable 
     }
 
     func configureForMeasurement() throws {
-        try session.setCategory(.playAndRecord, mode: .measurement, options: [])
+        // Use the normal duplex playback mode for audible practice. Measurement
+        // mode minimizes system processing but has not provided the expected
+        // loudspeaker playback on the physical device under test.
+        try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
     }
 
     func setPreferredSampleRate(_ sampleRate: Double) throws {
@@ -517,6 +767,7 @@ final class SystemAudioSessionBackend: AudioSessionBackend, @unchecked Sendable 
     }
 
     func setPreferredIOBufferDuration(_ duration: TimeInterval) throws {
+        guard duration > 0 else { return }
         try session.setPreferredIOBufferDuration(duration)
     }
 
@@ -525,6 +776,13 @@ final class SystemAudioSessionBackend: AudioSessionBackend, @unchecked Sendable 
             ? [.notifyOthersOnDeactivation]
             : []
         try session.setActive(active, options: options)
+        if active, session.currentRoute.outputs.contains(where: { $0.portType == .builtInReceiver }) {
+            // Some device/mode combinations retain the receiver despite the
+            // category default. Apply the explicit override after activation,
+            // when the effective route is known; never override headphones.
+            try session.overrideOutputAudioPort(.speaker)
+        }
+        AppLogger().audioSessionChanged("active=\(active) category=\(session.category.rawValue) mode=\(session.mode.rawValue) sampleRate=\(session.sampleRate) ioBuffer=\(session.ioBufferDuration) inputChannels=\(session.inputNumberOfChannels) outputs=\(session.currentRoute.outputs.map { $0.portType.rawValue }.joined(separator: ","))")
     }
 
     func setPreferredInput(id: String?) throws {

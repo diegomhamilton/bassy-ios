@@ -14,10 +14,13 @@ An Obsidian-ready project vault for a native iOS practice and recording app for 
 
 ## Current implementation
 
-F0.1 provides a native SwiftUI application shell with explicit dependency
-injection, structured logging, unit tests, and Session, Tone, and Library
-destinations. Open `BassPractice.xcodeproj` in Xcode and run the
-`BassPractice` scheme on an iOS 17 or newer simulator.
+The native SwiftUI app has Practice and Recordings tabs. Practice offers recording,
+live monitoring and the latest take; Tone opens from its toolbar. Recordings lists
+the current session's takes and opens saved workspaces through Sessions. Audio
+Settings and Diagnostics hold advanced controls. See
+[F0.2 — Simplified Practice UI](docs/plan/features/f0-2-simplified-practice-ui.md)
+for review status and physical validation still required. Open
+`BassPractice.xcodeproj` and run the `BassPractice` scheme on an iOS 17 or newer simulator.
 
 ## Start here
 
