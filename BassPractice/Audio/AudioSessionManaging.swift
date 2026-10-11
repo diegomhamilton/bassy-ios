@@ -1,13 +1,16 @@
 import AVFoundation
 import Foundation
+import UIKit
 
 protocol AudioSessionManaging: AnyObject, Sendable {
     var snapshot: AudioSessionSnapshot { get async }
     var currentRoute: AudioRoute { get async }
     var availableInputs: [AudioInput] { get async }
+    var preferredInput: AudioInput? { get async }
 
     func activate() async throws(AudioSessionError) -> AudioSessionSnapshot
     func deactivate() async throws(AudioSessionError)
+    func selectPreferredInput(id: String?) async throws(AudioSessionError)
     func events() async -> AsyncStream<AudioSessionEvent>
 }
 
@@ -35,6 +38,8 @@ enum AudioSessionError: Error, Equatable, Sendable {
     case preferredIOBufferDurationFailed(requested: TimeInterval)
     case activationFailed
     case deactivationFailed
+    case inputUnavailable(id: String)
+    case inputSelectionFailed(id: String?)
 }
 
 actor AudioControlActor: AudioSessionManaging {
@@ -42,10 +47,13 @@ actor AudioControlActor: AudioSessionManaging {
     private let configuration: AudioSessionConfiguration
     private var eventContinuations: [UUID: AsyncStream<AudioSessionEvent>.Continuation] = [:]
     private var observationTask: Task<Void, Never>?
+    private var wasActiveBeforeInterruption = false
+    private var isInBackground = false
 
     private(set) var snapshot: AudioSessionSnapshot
     private(set) var currentRoute: AudioRoute
     private(set) var availableInputs: [AudioInput]
+    private(set) var preferredInput: AudioInput?
 
     init(
         backend: any AudioSessionBackend,
@@ -55,6 +63,7 @@ actor AudioControlActor: AudioSessionManaging {
         self.configuration = configuration
         currentRoute = backend.currentRoute
         availableInputs = backend.availableInputs
+        preferredInput = nil
         snapshot = AudioSessionSnapshot(
             requestedSampleRate: configuration.preferredSampleRate,
             requestedIOBufferDuration: configuration.preferredIOBufferDuration,
@@ -140,6 +149,32 @@ actor AudioControlActor: AudioSessionManaging {
         )
     }
 
+    func selectPreferredInput(id: String?) throws(AudioSessionError) {
+        let refreshedInputs = backend.availableInputs
+        availableInputs = refreshedInputs
+
+        guard let id else {
+            do {
+                try backend.setPreferredInput(id: nil)
+            } catch {
+                throw .inputSelectionFailed(id: nil)
+            }
+            preferredInput = nil
+            return
+        }
+
+        guard let input = refreshedInputs.first(where: { $0.id == id }) else {
+            throw .inputUnavailable(id: id)
+        }
+
+        do {
+            try backend.setPreferredInput(id: id)
+        } catch {
+            throw .inputSelectionFailed(id: id)
+        }
+        preferredInput = input
+    }
+
     private func receive(
         _ event: AudioSessionBackendEvent,
         from backend: any AudioSessionBackend
@@ -148,13 +183,52 @@ actor AudioControlActor: AudioSessionManaging {
         case let .routeChanged(reason):
             currentRoute = backend.currentRoute
             availableInputs = backend.availableInputs
+            reconcilePreferredInput(using: backend)
             let routedEvent = AudioSessionEvent.routeChanged(
                 route: currentRoute,
                 reason: reason
             )
-            for continuation in eventContinuations.values {
-                continuation.yield(routedEvent)
+            publish(routedEvent)
+        case .interruptionBegan:
+            wasActiveBeforeInterruption = snapshot.isActive
+            snapshot = snapshot.withActiveState(false)
+            publish(.interruptionBegan)
+        case let .interruptionEnded(shouldResume):
+            let shouldReactivate = shouldResume && wasActiveBeforeInterruption && !isInBackground
+            wasActiveBeforeInterruption = false
+            if shouldReactivate {
+                _ = try? activate()
             }
+            publish(.interruptionEnded(shouldResume: shouldResume))
+        case .enteredBackground:
+            isInBackground = true
+            try? deactivate()
+            publish(.enteredBackground)
+        case .enteredForeground:
+            isInBackground = false
+            currentRoute = backend.currentRoute
+            availableInputs = backend.availableInputs
+            reconcilePreferredInput(using: backend)
+            publish(.enteredForeground)
+        }
+    }
+
+    private func reconcilePreferredInput(using backend: any AudioSessionBackend) {
+        guard let preferredInput else {
+            return
+        }
+
+        if let refreshedInput = availableInputs.first(where: { $0.id == preferredInput.id }) {
+            self.preferredInput = refreshedInput
+        } else {
+            try? backend.setPreferredInput(id: nil)
+            self.preferredInput = nil
+        }
+    }
+
+    private func publish(_ event: AudioSessionEvent) {
+        for continuation in eventContinuations.values {
+            continuation.yield(event)
         }
     }
 
@@ -185,6 +259,10 @@ actor AudioControlActor: AudioSessionManaging {
 
 enum AudioSessionBackendEvent: Equatable, Sendable {
     case routeChanged(reason: AudioRouteChangeReason)
+    case interruptionBegan
+    case interruptionEnded(shouldResume: Bool)
+    case enteredBackground
+    case enteredForeground
 }
 
 protocol AudioSessionBackend: Sendable {
@@ -198,13 +276,14 @@ protocol AudioSessionBackend: Sendable {
     func setPreferredSampleRate(_ sampleRate: Double) throws
     func setPreferredIOBufferDuration(_ duration: TimeInterval) throws
     func setActive(_ active: Bool, notifyOthersOnDeactivation: Bool) throws
+    func setPreferredInput(id: String?) throws
 }
 
 final class SystemAudioSessionBackend: AudioSessionBackend, @unchecked Sendable {
     private let session: AVAudioSession
     private let notificationCenter: NotificationCenter
     private let eventContinuation: AsyncStream<AudioSessionBackendEvent>.Continuation
-    private var routeChangeObserver: NSObjectProtocol?
+    private var notificationObservers: [NSObjectProtocol] = []
 
     let events: AsyncStream<AudioSessionBackendEvent>
 
@@ -236,7 +315,7 @@ final class SystemAudioSessionBackend: AudioSessionBackend, @unchecked Sendable 
         let (events, continuation) = AsyncStream<AudioSessionBackendEvent>.makeStream()
         self.events = events
         eventContinuation = continuation
-        routeChangeObserver = notificationCenter.addObserver(
+        notificationObservers.append(notificationCenter.addObserver(
             forName: AVAudioSession.routeChangeNotification,
             object: session,
             queue: nil
@@ -245,12 +324,48 @@ final class SystemAudioSessionBackend: AudioSessionBackend, @unchecked Sendable 
             continuation.yield(
                 .routeChanged(reason: AudioRouteChangeReason(rawValue: rawReason))
             )
-        }
+        })
+        notificationObservers.append(notificationCenter.addObserver(
+            forName: AVAudioSession.interruptionNotification,
+            object: session,
+            queue: nil
+        ) { notification in
+            guard let rawType = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+                  let type = AVAudioSession.InterruptionType(rawValue: rawType) else {
+                return
+            }
+            switch type {
+            case .began:
+                continuation.yield(.interruptionBegan)
+            case .ended:
+                let rawOptions = notification.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
+                let options = AVAudioSession.InterruptionOptions(rawValue: rawOptions)
+                continuation.yield(
+                    .interruptionEnded(shouldResume: options.contains(.shouldResume))
+                )
+            @unknown default:
+                return
+            }
+        })
+        notificationObservers.append(notificationCenter.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification,
+            object: nil,
+            queue: nil
+        ) { _ in
+            continuation.yield(.enteredBackground)
+        })
+        notificationObservers.append(notificationCenter.addObserver(
+            forName: UIApplication.willEnterForegroundNotification,
+            object: nil,
+            queue: nil
+        ) { _ in
+            continuation.yield(.enteredForeground)
+        })
     }
 
     deinit {
-        if let routeChangeObserver {
-            notificationCenter.removeObserver(routeChangeObserver)
+        for observer in notificationObservers {
+            notificationCenter.removeObserver(observer)
         }
         eventContinuation.finish()
     }
@@ -272,6 +387,35 @@ final class SystemAudioSessionBackend: AudioSessionBackend, @unchecked Sendable 
             ? [.notifyOthersOnDeactivation]
             : []
         try session.setActive(active, options: options)
+    }
+
+    func setPreferredInput(id: String?) throws {
+        let port: AVAudioSessionPortDescription?
+        if let id {
+            guard let availablePort = session.availableInputs?.first(where: { $0.uid == id }) else {
+                throw SystemAudioSessionBackendError.inputUnavailable
+            }
+            port = availablePort
+        } else {
+            port = nil
+        }
+        try session.setPreferredInput(port)
+    }
+}
+
+private enum SystemAudioSessionBackendError: Error {
+    case inputUnavailable
+}
+
+private extension AudioSessionSnapshot {
+    func withActiveState(_ isActive: Bool) -> Self {
+        AudioSessionSnapshot(
+            requestedSampleRate: requestedSampleRate,
+            requestedIOBufferDuration: requestedIOBufferDuration,
+            actualSampleRate: actualSampleRate,
+            actualIOBufferDuration: actualIOBufferDuration,
+            isActive: isActive
+        )
     }
 }
 

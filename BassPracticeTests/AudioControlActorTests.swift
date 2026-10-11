@@ -258,6 +258,8 @@ private enum TestDoubles {
             )
         }
 
+        func setPreferredInput(id: String?) throws {}
+
         func resetCommands() {
             lock.withLock { recordedCommands = [] }
         }
