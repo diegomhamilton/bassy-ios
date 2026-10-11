@@ -36,9 +36,14 @@ Each versioned release file contains checked-by-default feature scope. Uncheck a
 
 ## Traceability
 
+- [[features/f0-2-simplified-practice-ui|F0.2 — Simplified Practice UI]] — added after navigation exploration; prioritize before further V0.1 features.
 - [[archive/implementation-plan-full|Archived full plan]] — preserved source before splitting.
 - [[../prompts/codex-kickoff|Initial Codex session guideline]]
 - [[../snapshots/README|Human-checkpoint snapshot conventions]]
 
 > [!important]
 > Feature files are the atomic review units. Release files own scope selection. Reference files own cross-cutting engineering rules.
+
+## Verified audio checkpoint — 2026-10-10
+
+Built-in mic/speaker voice quality and default single-take looping confirmed by the user. [[features/2026-10-10-recording-quality-and-monitoring|Current state and evidence]] · [[reference/audio-regression-prevention|Code/test safeguards]]. [[features/f9-1-single-loop-recording|F9.1]] is partially implemented; V0.2 multi-track, overdub and alignment remain proposed.

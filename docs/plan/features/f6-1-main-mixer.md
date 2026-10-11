@@ -3,7 +3,7 @@ title: F6.1 — Main Mixer
 feature: F6.1
 version: V0.1
 phase: "Phase 6 — Mixer"
-status: proposed
+status: hardware-review-pending
 tags:
   - feature-pr
   - v0-1
@@ -14,6 +14,8 @@ tags:
 [[../releases/v0-1|← V0.1]] · [[../implementation-plan|Plan index]]
 
 ## Task PR checklist
+
+Implemented at `a6c9119`: independent playback volume/mute, instrument monitoring volume/mute, pre-fader RMS/peak/clipping meters and one shared tap for instrument metering/recording. Graph generations reject stale callbacks. Full scheme: 114 logical /230 expanded cases passed. Physical balance/continuous audio and UI controls below the fold remain review gates.
 
 - [x] [[#Task PR F6.1.1 — Mixer domain model|F6.1.1 — Mixer domain model]]
 - [x] [[#Task PR F6.1.2 — Channel volume|F6.1.2 — Channel volume]]
