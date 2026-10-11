@@ -5,7 +5,7 @@ import Testing
 @Suite("App dependencies")
 struct AppDependenciesTests {
     @Test("Dependencies can be replaced with test doubles")
-    func dependenciesCanBeReplacedWithTestDoubles() async {
+    func dependenciesCanBeReplacedWithTestDoubles() async throws {
         // Arrange
         let audioSession = TestDoubles.AudioSession()
         let audioEngine = TestDoubles.AudioEngine()
@@ -17,6 +17,7 @@ struct AppDependenciesTests {
             audioSession: audioSession,
             audioEngine: audioEngine,
             gainController: audioEngine,
+            profileRepository: UnavailableInputProfileRepository(failure: .applicationSupportUnavailable),
             sessionRepository: sessions,
             audioFileStore: files,
             logger: AppLogger()
@@ -25,7 +26,7 @@ struct AppDependenciesTests {
         // Assert
         #expect(dependencies.audioSession === audioSession)
         #expect(dependencies.audioEngine === audioEngine)
-        #expect(dependencies.sessionRepository.sessions() == sessions.result)
+        #expect(try await dependencies.sessionRepository.sessions() == sessions.result)
         #expect(dependencies.audioFileStore.rootDirectory == files.rootDirectory)
     }
 
@@ -100,7 +101,7 @@ private enum TestDoubles {
         }
     }
 
-    actor AudioEngine: AudioEngineProtocol, AudioGainControlling {
+    actor AudioEngine: AudioEngineProtocol, AudioToneControlling {
         let state: AudioEngineState = .stopped
         let monitoringEnabled = false
         let monitoringGain: Float = 1
@@ -109,6 +110,24 @@ private enum TestDoubles {
         func stop() {}
         func setMonitoring(enabled: Bool, gain: Float) {}
         private var gains: [GainStage: GainConfiguration] = [:]
+        private(set) var equalizer: EQConfiguration = .flat
+        private(set) var selectedProfileID: UUID?
+        func setEqualizer(_ configuration: EQConfiguration) throws(ToneProcessingError) {
+            try NativeEQLimits.validate(configuration, sampleRate: 48_000)
+            equalizer = configuration
+            selectedProfileID = nil
+        }
+        func applyProfile(_ profile: InputProfile) throws(ToneProcessingError) {
+            try NativeEQLimits.validate(profile.eq, sampleRate: 48_000)
+            guard NativeGainLimits.range.contains(profile.inputGainDecibels) else { throw .unsupportedInputGain(profile.inputGainDecibels) }
+            gains[.input] = GainConfiguration(decibels: profile.inputGainDecibels, bypassed: false)
+            equalizer = profile.eq
+            selectedProfileID = profile.id
+        }
+        func profileSnapshot(name: String) throws(InputProfileValidationError) -> InputProfile {
+            let input = gains[.input] ?? .unity
+            return try InputProfile(name: name, instrument: .custom, inputGainDecibels: input.bypassed ? 0 : input.decibels, eq: equalizer)
+        }
         func gain(for stage: GainStage) -> GainConfiguration { gains[stage] ?? .unity }
         func setGain(_ configuration: GainConfiguration, for stage: GainStage) throws(GainProcessingError) {
             try NativeGainLimits.validate(configuration, stage: stage)
@@ -116,15 +135,23 @@ private enum TestDoubles {
         }
     }
 
-    final class SessionRepository: BassPractice.SessionRepository {
-        let result = [PracticeSession(id: UUID(), name: "Test Session")]
+    actor SessionRepository: BassPractice.SessionRepository {
+        let result = [try! PracticeSession(name: "Test Session")]
 
         func sessions() -> [PracticeSession] {
             result
         }
+        func create(name: String) throws(SessionRepositoryError) -> PracticeSession { throw .unavailable }
+        func load(id: UUID) throws(SessionRepositoryError) -> PracticeSession { throw .notFound }
+        func save(_ session: PracticeSession) throws(SessionRepositoryError) { throw .unavailable }
+        func delete(id: UUID) throws(SessionRepositoryError) { throw .unavailable }
     }
 
     struct AudioFileStore: BassPractice.AudioFileStore {
-        let rootDirectory = URL(fileURLWithPath: "/tmp/bass-practice-tests")
+        let rootDirectory: URL? = URL(fileURLWithPath: "/tmp/bass-practice-tests")
+        func recordingURL(sessionID: UUID, recordingID: UUID) throws(AudioFileStoreError) -> URL {
+            guard let rootDirectory else { throw .unavailable }
+            return rootDirectory.appendingPathComponent(recordingID.uuidString + ".caf")
+        }
     }
 }

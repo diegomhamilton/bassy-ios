@@ -138,6 +138,17 @@ private enum TestDoubles {
             }
         }
         func prepare() {}
+        private var storedEqualizer: EQConfiguration = .flat
+        func setTone(inputGain: GainConfiguration, equalizer: EQConfiguration, sampleRate: Double) throws {
+            try NativeGainLimits.validate(inputGain, stage: .input)
+            try NativeEQLimits.validate(equalizer, sampleRate: sampleRate)
+            try lock.withLock {
+                if storedFailure { throw Failure.requested }
+                gains[.input] = inputGain
+                storedEqualizer = equalizer
+                storedWrites += 1
+            }
+        }
         func start() { lock.withLock { storedStarts += 1 } }
         func stop() {}
     }

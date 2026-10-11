@@ -17,43 +17,45 @@ enum AppDestination: String, CaseIterable {
 }
 
 struct AppShellView: View {
+    @Environment(\.scenePhase) private var scenePhase
     let dependencies: AppDependencies
+    private let initialTone: Bool
     @State private var selection: AppDestination
+    @State private var sessionModel: SessionModel
 
     init(
         dependencies: AppDependencies,
         initialDestination: AppDestination = .initial(arguments: ProcessInfo.processInfo.arguments)
     ) {
         self.dependencies = dependencies
-        _selection = State(initialValue: initialDestination)
+        initialTone = initialDestination == .tone
+        _selection = State(initialValue: initialDestination == .tone ? .session : initialDestination)
+        _sessionModel = State(initialValue: SessionModel(engine: dependencies.audioEngine, session: dependencies.audioSession, files: dependencies.audioFileStore, repository: dependencies.sessionRepository))
     }
 
     var body: some View {
         TabView(selection: $selection) {
             NavigationStack {
-                SessionView(audioEngine: dependencies.audioEngine, audioSession: dependencies.audioSession)
+                SessionView(model: sessionModel, toneController: dependencies.gainController, profileRepository: dependencies.profileRepository, showToneInitially: initialTone)
             }
             .tabItem {
-                Label("Session", systemImage: "waveform")
+                Label("Practice", systemImage: "waveform")
             }
             .tag(AppDestination.session)
 
             NavigationStack {
-                ToneView(controller: dependencies.gainController)
+                LibraryView(sessionRepository: dependencies.sessionRepository, workspace: sessionModel)
             }
             .tabItem {
-                Label("Tone", systemImage: "slider.horizontal.3")
-            }
-            .tag(AppDestination.tone)
-
-            NavigationStack {
-                LibraryView(sessionRepository: dependencies.sessionRepository)
-            }
-            .tabItem {
-                Label("Library", systemImage: "music.note.list")
+                Label("Recordings", systemImage: "music.note.list")
             }
             .tag(AppDestination.library)
         }
+        .task { await sessionModel.observe() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background { Task { await sessionModel.stopPlayback() } }
+        }
+        .disabled(!sessionModel.isWorkspaceReady)
     }
 }
 
