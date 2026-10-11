@@ -1,0 +1,4 @@
+interface:
+  display_name: "iOS Swift Testing"
+  short_description: "Design focused Swift tests for each task"
+  default_prompt: "Use $ios-swift-testing to add focused tests for this iOS implementation step."
