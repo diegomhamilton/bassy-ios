@@ -3,7 +3,7 @@ title: F4.1 — Recording Engine
 feature: F4.1
 version: V0.1
 phase: "Phase 4 — Recording"
-status: proposed
+status: hardware-review-pending
 tags:
   - feature-pr
   - v0-1
@@ -14,6 +14,8 @@ tags:
 [[../releases/v0-1|← V0.1]] · [[../implementation-plan|Plan index]]
 
 ## Task PR checklist
+
+Implemented CAF recording and lifecycle finalization. Current neutral built-in mic capture uses `AVAudioRecorder` with monitoring off; requested effects/monitoring and external inputs retain the processed engine tap. Neutral voice quality is user-confirmed, while affected non-neutral engine capture remains a physical review gate. Playback loads a bounded complete PCM phrase in partial-read-aware blocks and loops by default through the playback mixer/output gain. F7 persists recordings and workspace metadata for reopening. See [[2026-10-10-recording-quality-and-monitoring|current audio evidence]] and [[../reference/audio-regression-prevention|required regression safeguards]]. Historical [F4.1 checkpoint](../../snapshots/2026-10-05_F4-1_recording-playback/README.md) records the original implementation.
 
 - [x] [[#Task PR F4.1.1 — Recorder abstraction|F4.1.1 — Recorder abstraction]]
 - [x] [[#Task PR F4.1.2 — Engine tap recording|F4.1.2 — Engine tap recording]]
