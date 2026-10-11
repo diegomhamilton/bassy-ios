@@ -15,7 +15,7 @@ tags:
 
 ## Task PR checklist
 
-Implemented at `81c4ac3`: CAF tap recording after the processing chain and before monitor volume, serialized start/stop/failure state, interruption/stop finalization, and Session recording/playback controls. Native playback streams through a separate mixer into output gain. Full scheme passed 109 logical /220 expanded cases. Physical capture/listening remain pending. CAF files persist on disk, but the current recording list is in memory; F7 session metadata/library persistence remains required for reopening after relaunch. See [checkpoint](../../snapshots/2026-10-05_F4-1_recording-playback/README.md).
+Implemented CAF recording and lifecycle finalization. Current neutral built-in mic capture uses `AVAudioRecorder` with monitoring off; requested effects/monitoring and external inputs retain the processed engine tap. Neutral voice quality is user-confirmed, while affected non-neutral engine capture remains a physical review gate. Playback loads a bounded complete PCM phrase in partial-read-aware blocks and loops by default through the playback mixer/output gain. F7 persists recordings and workspace metadata for reopening. See [[2026-10-10-recording-quality-and-monitoring|current audio evidence]] and [[../reference/audio-regression-prevention|required regression safeguards]]. Historical [F4.1 checkpoint](../../snapshots/2026-10-05_F4-1_recording-playback/README.md) records the original implementation.
 
 - [x] [[#Task PR F4.1.1 — Recorder abstraction|F4.1.1 — Recorder abstraction]]
 - [x] [[#Task PR F4.1.2 — Engine tap recording|F4.1.2 — Engine tap recording]]
