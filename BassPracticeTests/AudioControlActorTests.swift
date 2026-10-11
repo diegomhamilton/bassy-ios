@@ -210,6 +210,7 @@ private enum TestDoubles {
         let sampleRate: Double
         let ioBufferDuration: TimeInterval
         let currentRoute = AudioRoute.empty
+        let availableInputs: [AudioInput] = []
         let events: AsyncStream<AudioSessionBackendEvent>
 
         var commands: [Command] {
