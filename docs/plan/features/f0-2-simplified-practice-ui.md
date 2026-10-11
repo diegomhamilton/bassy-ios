@@ -17,7 +17,7 @@ Make the next practice action available in one or two taps without searching a l
 
 ## Task PR checklist
 
-- [x] F0.2.1 — Practice transport: Record starts audio as needed, Finish Recording stays in place, latest take has Listen/Stop, Listen Live owns startup.
+- [x] F0.2.1 — Practice transport: Record Loop starts audio as needed; Finish & Loop automatically repeats; Stop Loop/Play Loop stays in place; Record New Loop retains previous takes.
 - [x] F0.2.2 — Recording navigation: Recordings shows the current session's takes; Sessions opens another workspace and returns directly to its takes.
 - [x] F0.2.3 — Progressive disclosure: Tone is reachable from Practice; source mix/input lives in Audio Settings, technical formats/routes/meters in Diagnostics.
 - [x] F0.2.4 — Honest feedback: visible output identity, silent playback notice, confirmed save/pending/failure status and save retry; permission/startup errors preserve the workspace.
@@ -37,6 +37,10 @@ Make the next practice action available in one or two taps without searching a l
 
 ## Scope and dependencies
 
-Stacks on F7 session persistence/Library (PR #22). Uses the existing audio graph and repository. Session category/mode/output policy are unchanged; receiver versus speaker is displayed, but the reported inaudible physical recording is not claimed fixed. Playback still uses the input-capable engine and therefore requires microphone permission. No loop, pause/seek, shared transport, imported tracks or global recording search.
+Stacks on F7 session persistence/Library (PR #22). Uses the existing audio graph and repository. Speaker routing and neutral built-in voice capture are fixed and physically confirmed; see [[2026-10-10-recording-quality-and-monitoring|audio findings and regression safeguards]]. Playback still uses the input-capable engine and therefore requires microphone permission. Single-take playback loops by default. No pause/seek, shared transport, multi-track loops, overdub, imported tracks or global recording search.
 
 Validation and screenshots: [F0.2 checkpoint](../../snapshots/2026-10-05_F0-2_simplified-practice-ui/README.md). Implementation remains review-pending until the PR and physical checks are reviewed.
+
+## Current physical review
+
+Built-in mic/speaker voice quality and both loop actions confirmed by the user on 2026-10-10. Input monitoring is in Audio Settings. Interface/headphone, relaunch/route-change and accessibility review remain pending; F0.2.5 is not fully complete.

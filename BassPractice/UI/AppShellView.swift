@@ -17,6 +17,7 @@ enum AppDestination: String, CaseIterable {
 }
 
 struct AppShellView: View {
+    @Environment(\.scenePhase) private var scenePhase
     let dependencies: AppDependencies
     private let initialTone: Bool
     @State private var selection: AppDestination
@@ -51,6 +52,9 @@ struct AppShellView: View {
             .tag(AppDestination.library)
         }
         .task { await sessionModel.observe() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background { Task { await sessionModel.stopPlayback() } }
+        }
         .disabled(!sessionModel.isWorkspaceReady)
     }
 }

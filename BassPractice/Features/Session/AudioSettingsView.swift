@@ -29,18 +29,30 @@ struct AudioSettingsView: View {
                 }
             }.disabled(model.isBusy)
             Section("Live Monitoring") {
+                Button(model.monitoringEnabled ? "Turn Off Input Monitoring" : "Monitor Input", systemImage: "headphones") {
+                    Task { await model.toggleLiveMonitoring() }
+                }.disabled(model.isRecording && !model.monitoringEnabled)
                 LabeledContent("Monitoring", value: model.monitoringEnabled ? "On" : "Off")
                 MixVolumeSlider(title: "Monitoring Volume", volume: model.monitoringGain) { gain in
                     await model.setMonitoring(enabled: model.monitoringEnabled, gain: gain)
                     return model.monitoringGain
                 }
-                Text("Listen Live on Practice starts monitoring. Use headphones to avoid microphone feedback.").font(.caption).foregroundStyle(.secondary)
+                Text("Hear your microphone while you play. Use headphones to avoid microphone feedback.").font(.caption).foregroundStyle(.secondary)
             }.disabled(model.isBusy)
             Section {
                 NavigationLink("Audio Diagnostics") { AudioDiagnosticsView(model: model) }
             }
             WorkspaceNotices(model: model)
         }.navigationTitle("Audio Settings")
+        .confirmationDialog("Listen through the iPhone microphone and speaker?", isPresented: Binding(
+            get: { model.needsMonitoringConfirmation },
+            set: { if !$0 { model.cancelMonitoringConfirmation() } }
+        ), titleVisibility: .visible) {
+            Button("Continue at Low Volume") { Task { await model.toggleLiveMonitoring(confirmBuiltInOutput: true) } }
+            Button("Cancel", role: .cancel) { model.cancelMonitoringConfirmation() }
+        } message: {
+            Text("Use headphones to avoid feedback. Live monitoring will start at a low volume if you continue.")
+        }
     }
     private func names(_ devices: [AudioDevice]) -> String { devices.isEmpty ? "Not yet confirmed" : devices.map(\.name).joined(separator: ", ") }
 }

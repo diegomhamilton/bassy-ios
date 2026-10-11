@@ -20,7 +20,9 @@ struct AudioSessionConfiguration: Equatable, Sendable {
 
     static let bassPractice = AudioSessionConfiguration(
         preferredSampleRate: 48_000,
-        preferredIOBufferDuration: 0.00533
+        // Zero means system-negotiated duration. Forced durations produced
+        // periodic silence on the built-in input of the physical test device.
+        preferredIOBufferDuration: 0
     )
 }
 
@@ -754,7 +756,10 @@ final class SystemAudioSessionBackend: AudioSessionBackend, @unchecked Sendable 
     }
 
     func configureForMeasurement() throws {
-        try session.setCategory(.playAndRecord, mode: .measurement, options: [])
+        // Use the normal duplex playback mode for audible practice. Measurement
+        // mode minimizes system processing but has not provided the expected
+        // loudspeaker playback on the physical device under test.
+        try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
     }
 
     func setPreferredSampleRate(_ sampleRate: Double) throws {
@@ -762,6 +767,7 @@ final class SystemAudioSessionBackend: AudioSessionBackend, @unchecked Sendable 
     }
 
     func setPreferredIOBufferDuration(_ duration: TimeInterval) throws {
+        guard duration > 0 else { return }
         try session.setPreferredIOBufferDuration(duration)
     }
 
@@ -770,6 +776,13 @@ final class SystemAudioSessionBackend: AudioSessionBackend, @unchecked Sendable 
             ? [.notifyOthersOnDeactivation]
             : []
         try session.setActive(active, options: options)
+        if active, session.currentRoute.outputs.contains(where: { $0.portType == .builtInReceiver }) {
+            // Some device/mode combinations retain the receiver despite the
+            // category default. Apply the explicit override after activation,
+            // when the effective route is known; never override headphones.
+            try session.overrideOutputAudioPort(.speaker)
+        }
+        AppLogger().audioSessionChanged("active=\(active) category=\(session.category.rawValue) mode=\(session.mode.rawValue) sampleRate=\(session.sampleRate) ioBuffer=\(session.ioBufferDuration) inputChannels=\(session.inputNumberOfChannels) outputs=\(session.currentRoute.outputs.map { $0.portType.rawValue }.joined(separator: ","))")
     }
 
     func setPreferredInput(id: String?) throws {

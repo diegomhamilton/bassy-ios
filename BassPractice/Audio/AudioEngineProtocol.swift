@@ -110,6 +110,7 @@ struct AudioEngineInputFormat: Equatable, Sendable {
 final class SystemAudioEngineBackend: AudioCaptureBackend, AudioPlaybackBackend, AudioWorkspaceBackend, @unchecked Sendable {
     private enum BackendError: Error {
         case missingAudioFormat
+        case nativeRecordingActive
     }
 
     private let engine: AVAudioEngine
@@ -123,6 +124,7 @@ final class SystemAudioEngineBackend: AudioCaptureBackend, AudioPlaybackBackend,
     private let playbackPlayer = AVAudioPlayerNode()
     private let playbackMixer = AVAudioMixerNode()
     private var recordingSink: AudioRecordingSink?
+    private var nativeRecorder: AVAudioRecorder?
     private let instrumentTap = AudioTapState()
     private let playbackTap = AudioTapState()
     private var meterTapsInstalled = false
@@ -214,18 +216,19 @@ final class SystemAudioEngineBackend: AudioCaptureBackend, AudioPlaybackBackend,
             let playbackObserver = playbackTap
             let instrumentGeneration = instrumentObserver.beginObservation()
             let playbackGeneration = playbackObserver.beginObservation()
-            let inputRate = processedInstrument.outputFormat(forBus: 0).sampleRate
-            processedInstrument.installTap(onBus: 0, bufferSize: AVAudioFrameCount(max(1, inputRate * 0.1)), format: nil) { buffer, _ in instrumentObserver.consume(buffer, generation: instrumentGeneration) }
-            playbackMixer.installTap(onBus: 0, bufferSize: AVAudioFrameCount(max(1, format.sampleRate * 0.1)), format: nil) { buffer, _ in playbackObserver.consume(buffer, generation: playbackGeneration) }
+            processedInstrument.installTap(onBus: 0, bufferSize: 1024, format: nil) { buffer, _ in instrumentObserver.consume(buffer, generation: instrumentGeneration) }
+            playbackMixer.installTap(onBus: 0, bufferSize: 1024, format: nil) { buffer, _ in playbackObserver.consume(buffer, generation: playbackGeneration) }
             meterTapsInstalled = true
         }
     }
 
     func setGain(_ configuration: GainConfiguration, for stage: GainStage) throws {
+        if stage == .input && nativeRecorder != nil { throw BackendError.nativeRecordingActive }
         try (stage == .input ? inputGain : outputGain).apply(configuration)
     }
 
     func setTone(inputGain: GainConfiguration, equalizer: EQConfiguration, sampleRate: Double) throws {
+        guard nativeRecorder == nil else { throw BackendError.nativeRecordingActive }
         try NativeGainLimits.validate(inputGain, stage: .input)
         try NativeEQLimits.validate(equalizer, sampleRate: sampleRate)
         // AVAudioUnit parameter assignments are nonthrowing after all validation succeeds.
@@ -234,6 +237,7 @@ final class SystemAudioEngineBackend: AudioCaptureBackend, AudioPlaybackBackend,
     }
 
     func setInstrumentMixerVolume(_ volume: Float) throws {
+        if volume > 0 && nativeRecorder != nil { throw BackendError.nativeRecordingActive }
         instrumentMixer.outputVolume = volume
     }
 
@@ -253,7 +257,35 @@ final class SystemAudioEngineBackend: AudioCaptureBackend, AudioPlaybackBackend,
     }
 
     func beginRecording(to fileURL: URL) throws(AudioRecordingFailure) {
-        guard recordingSink == nil else { throw .alreadyRecording }
+        guard recordingSink == nil, nativeRecorder == nil else { throw .alreadyRecording }
+        guard !FileManager.default.fileExists(atPath: fileURL.path) else { throw .fileCreationFailed }
+        let nativeVoiceCapture = AVAudioSession.sharedInstance().currentRoute.inputs.contains { $0.portType == .builtInMic }
+            && inputGain.node.bypass && equalizer.node.bypass && instrumentMixer.outputVolume == 0
+        if nativeVoiceCapture {
+            // Neutral built-in-mic capture avoids the discontinuous engine input
+            // observed before file writes on the physical device. A same-session
+            // AVAudioRecorder control had continuous PCM; forced I/O timing and
+            // neutral DSP alone did not fix the engine path. Preserve eligibility:
+            // effects/monitoring must retain the graph instead of losing processing.
+            // See docs/plan/reference/audio-regression-prevention.md.
+            engine.stop()
+            do {
+                let recorder = try AVAudioRecorder(url: fileURL, settings: [
+                    AVFormatIDKey: kAudioFormatLinearPCM,
+                    AVSampleRateKey: 48_000,
+                    AVNumberOfChannelsKey: 1,
+                    AVLinearPCMBitDepthKey: 32,
+                    AVLinearPCMIsFloatKey: true,
+                    AVLinearPCMIsBigEndianKey: false
+                ])
+                guard recorder.record() else { throw AudioRecordingFailure.fileCreationFailed }
+                nativeRecorder = recorder
+                return
+            } catch {
+                try? engine.start()
+                throw .fileCreationFailed
+            }
+        }
         let format = processedInstrument.outputFormat(forBus: 0)
         let sink = try AudioRecordingSink(fileURL: fileURL, format: format)
         recordingSink = sink
@@ -261,6 +293,17 @@ final class SystemAudioEngineBackend: AudioCaptureBackend, AudioPlaybackBackend,
     }
 
     func finishRecording() throws(AudioRecordingFailure) -> CapturedAudio {
+        if let recorder = nativeRecorder {
+            recorder.stop()
+            nativeRecorder = nil
+            do {
+                let file = try AVAudioFile(forReading: recorder.url)
+                guard file.length > 0 else { throw AudioRecordingFailure.emptyRecording }
+                engine.prepare()
+                try engine.start()
+                return CapturedAudio(frameCount: file.length, sampleRate: file.processingFormat.sampleRate, channelCount: file.processingFormat.channelCount)
+            } catch { throw .finalizationFailed }
+        }
         guard let sink = recordingSink else { throw .notRecording }
         instrumentTap.setSink(nil)
         recordingSink = nil
@@ -271,11 +314,14 @@ final class SystemAudioEngineBackend: AudioCaptureBackend, AudioPlaybackBackend,
         let file: AVAudioFile
         do { file = try AVAudioFile(forReading: fileURL) } catch { throw .unreadableFile }
         guard file.length > 0, file.processingFormat.sampleRate > 0, file.processingFormat.channelCount > 0 else { throw .invalidFormat }
+        // Load a bounded phrase once. The audio player repeats it on the render thread,
+        // without completion callbacks or gaps caused by scheduling from the UI.
+        let buffer = try AudioLoopBuffer.load(file)
         playbackPlayer.stop()
         engine.connect(playbackPlayer, to: playbackMixer, format: file.processingFormat)
         // Preserve the file's channel layout until the main mixer performs hardware conversion.
         engine.connect(playbackMixer, to: engine.mainMixerNode, format: file.processingFormat)
-        playbackPlayer.scheduleFile(file, at: nil, completionCallbackType: .dataPlayedBack) { _ in Task { await completion() } }
+        playbackPlayer.scheduleBuffer(buffer, at: nil, options: .loops)
         playbackPlayer.play()
     }
 

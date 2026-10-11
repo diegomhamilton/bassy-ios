@@ -5,14 +5,50 @@ import Testing
 
 @Suite("Recording and playback")
 struct RecordingPlaybackTests {
-    @Test("Native playback reads a CAF through the production playback mixer and output gain")
+    @Test("CAF writer preserves irregular callback lengths without inserting silence")
+    func irregularCallbackLengths() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("irregular.caf")
+        let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 1))
+        let sink = try AudioRecordingSink(fileURL: url, format: format)
+        let lengths: [AVAudioFrameCount] = [256, 1024, 1104, 1280, 4096, 4800, 5120, 257]
+        var expected: [Float] = []
+        for (block, length) in lengths.enumerated() {
+            let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: length + 1024))
+            let data = try #require(buffer.floatChannelData?[0])
+            for frame in 0..<Int(buffer.frameCapacity) { data[frame] = -0.75 }
+            buffer.frameLength = length
+            for frame in 0..<Int(length) {
+                let value = Float((frame + block) % 97 + 1) / 128
+                data[frame] = value
+                expected.append(value)
+            }
+            sink.consume(buffer)
+        }
+        let captured = try sink.finish()
+        let file = try AVAudioFile(forReading: url)
+        #expect(captured.frameCount == Int64(expected.count))
+        #expect(file.length == Int64(expected.count))
+        let loaded = try #require(AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: 1024))
+        var actual: [Float] = []
+        while file.framePosition < file.length {
+            try file.read(into: loaded, frameCount: 1024)
+            try #require(loaded.frameLength > 0)
+            let samples = try #require(loaded.floatChannelData?[0])
+            actual.append(contentsOf: UnsafeBufferPointer(start: samples, count: Int(loaded.frameLength)))
+        }
+        #expect(actual == expected)
+    }
+
+    @Test("Native loop repeats across three boundaries and stops through the production mixer")
     func nativePlaybackRendersCAF() throws {
         // Arrange
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let fileURL = directory.appendingPathComponent("source.caf")
         let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 1))
-        let source = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 16_384))
+        let source = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 16_397))
         source.frameLength = source.frameCapacity
         let values = try #require(source.floatChannelData?[0])
         for index in 0..<Int(source.frameLength) { values[index] = 0.125 }
@@ -37,17 +73,49 @@ struct RecordingPlaybackTests {
         var samples = 0
         for _ in 0..<64 {
             if try engine.renderOffline(1024, to: output) == .success {
-                if engine.manualRenderingSampleTime > 4096 && engine.manualRenderingSampleTime <= 12_288 {
+                if engine.manualRenderingSampleTime > 4096 && engine.manualRenderingSampleTime <= 57_344 {
                     let rendered = try #require(output.floatChannelData?[0])
                     for index in 0..<Int(output.frameLength) { sum += Double(rendered[index]); samples += 1 }
                 }
-                if engine.manualRenderingSampleTime >= 12_288 { break }
+                if engine.manualRenderingSampleTime >= 57_344 { break }
             }
         }
 
         // Assert
-        try #require(samples >= 4096)
+        try #require(samples >= 48_000)
         #expect(abs(sum / Double(samples) / 0.125 - pow(10, -6.0 / 20)) < 0.002)
+        backend.stopPlayback()
+        for _ in 0..<8 { _ = try engine.renderOffline(1024, to: output) }
+        let stopped = try #require(output.floatChannelData?[0])
+        #expect((0..<Int(output.frameLength)).allSatisfy { abs(stopped[$0]) < 0.00001 })
+    }
+
+    @Test("Loop loading preserves all samples of nonaligned mono and stereo takes", arguments: [1, 2])
+    func completeLoopBuffer(channels: AVAudioChannelCount) throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let url = directory.appendingPathComponent("nonaligned.caf")
+        let format = try #require(AVAudioFormat(standardFormatWithSampleRate: channels == 1 ? 48_000 : 44_100, channels: channels))
+        let source = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 163_286))
+        source.frameLength = source.frameCapacity
+        let values = try #require(source.floatChannelData)
+        for channel in 0..<Int(channels) {
+            for frame in 0..<Int(source.frameLength) { values[channel][frame] = Float((frame + channel) % 97 + 1) / 128 }
+        }
+        do {
+            let writer = try AVAudioFile(forWriting: url, settings: format.settings)
+            try writer.write(from: source)
+        }
+        let file = try AVAudioFile(forReading: url)
+        let loaded = try AudioLoopBuffer.load(file)
+        #expect(loaded.frameLength == source.frameLength)
+        #expect(file.framePosition == file.length)
+        let samples = try #require(loaded.floatChannelData)
+        for channel in 0..<Int(channels) {
+            #expect(Array(UnsafeBufferPointer(start: samples[channel], count: Int(loaded.frameLength))) ==
+                    Array(UnsafeBufferPointer(start: values[channel], count: Int(source.frameLength))))
+        }
     }
 
     @Test("Interruption finalizes capture and stops playback before publishing interrupted state")
