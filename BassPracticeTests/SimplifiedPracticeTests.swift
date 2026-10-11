@@ -16,6 +16,10 @@ struct SimplifiedPracticeTests {
         await model.toggleRecording()
         #expect(!model.isRecording)
         #expect(model.latestRecording?.duration == 1)
+        #expect(model.playbackState == .playing(try #require(model.latestRecording).id))
+        #expect(await engine.actions.last == "play")
+        await model.stopPlayback()
+        #expect(model.playbackState == .stopped)
         #expect(model.errorMessage == nil)
     }
 

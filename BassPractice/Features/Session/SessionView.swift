@@ -32,9 +32,14 @@ struct SessionView: View {
                 VStack(spacing: 16) {
                     transportStatus
                     Button {
-                        Task { await model.toggleRecording() }
+                        Task {
+                            if model.isRecording { await model.toggleRecording() }
+                            else if case .playing = model.playbackState { await model.stopPlayback() }
+                            else if let recording = model.latestRecording { await model.playRecording(recording) }
+                            else { await model.toggleRecording() }
+                        }
                     } label: {
-                        Label(model.isRecording ? "Finish Recording" : "Record", systemImage: model.isRecording ? "stop.fill" : "record.circle")
+                        Label(transportLabel, systemImage: model.isRecording ? "stop.fill" : "repeat")
                             .font(.headline)
                             .frame(maxWidth: .infinity, minHeight: 44)
                     }
@@ -43,20 +48,21 @@ struct SessionView: View {
                     .disabled(model.isBusy)
                     .accessibilityIdentifier("practice.record")
 
-                    Button {
-                        Task { await model.toggleLiveMonitoring() }
-                    } label: {
-                        Label(model.monitoringEnabled && model.state == .running ? "Turn Off Live Monitoring" : "Listen Live", systemImage: "headphones")
-                            .frame(maxWidth: .infinity, minHeight: 44)
-                    }.buttonStyle(.bordered).disabled(model.isBusy)
-                        .accessibilityIdentifier("practice.monitor")
+                    if model.latestRecording != nil && !model.isRecording {
+                        Button("Record New Loop", systemImage: "record.circle") {
+                            Task { await model.toggleRecording() }
+                        }.buttonStyle(.bordered).disabled(model.isBusy)
+                    }
+                    Text("Record a phrase, finish it, and it repeats until you stop.")
+                        .font(.caption).foregroundStyle(.secondary)
+
                 }
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Latest Recording").font(.headline)
                     if let recording = model.latestRecording {
                         RecordingRow(recording: recording, model: model)
                     } else {
-                        Text("Record a phrase, then listen to it here.").foregroundStyle(.secondary)
+                        Text("Your finished phrase will loop automatically.").foregroundStyle(.secondary)
                     }
                 }
                 PlaybackNotice(model: model)
@@ -72,6 +78,7 @@ struct SessionView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Tone", systemImage: "slider.horizontal.3") { showTone = true }
+                    .disabled(model.isRecording)
                     .accessibilityIdentifier("practice.tone")
             }
         }
@@ -82,15 +89,12 @@ struct SessionView: View {
                     .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showTone = false } } }
             }
         }
-        .confirmationDialog("Listen through the iPhone microphone and speaker?", isPresented: Binding(
-            get: { model.needsMonitoringConfirmation },
-            set: { if !$0 { model.cancelMonitoringConfirmation() } }
-        ), titleVisibility: .visible) {
-            Button("Continue at Low Volume") { Task { await model.toggleLiveMonitoring(confirmBuiltInOutput: true) } }
-            Button("Cancel", role: .cancel) { model.cancelMonitoringConfirmation() }
-        } message: {
-            Text("Use headphones to avoid feedback. Live monitoring will start at a low volume if you continue.")
-        }
+    }
+
+    private var transportLabel: String {
+        if model.isRecording { return "Finish & Loop" }
+        if case .playing = model.playbackState { return "Stop Loop" }
+        return model.latestRecording == nil ? "Record Loop" : "Play Loop"
     }
 
     @ViewBuilder private var transportStatus: some View {
@@ -100,7 +104,7 @@ struct SessionView: View {
                 Text(startedAt, style: .timer).monospacedDigit()
             }.accessibilityIdentifier("practice.recordingStatus")
         } else if case .playing = model.playbackState {
-            Label("Playing Recording", systemImage: "play.fill")
+            Label("Looping", systemImage: "play.fill")
         } else if model.isBusy {
             ProgressView("Preparing…")
         } else if model.state == .interrupted {
@@ -131,7 +135,7 @@ struct RecordingRow: View {
                     else { await model.playRecording(recording) }
                 }
             } label: {
-                Label(isPlaying ? "Stop" : "Listen", systemImage: isPlaying ? "stop.fill" : "play.fill")
+                Label(isPlaying ? "Stop" : "Play Loop", systemImage: isPlaying ? "stop.fill" : "play.fill")
                     .frame(minHeight: 44)
             }.buttonStyle(.bordered)
                 .disabled(model.isBusy || model.isRecording)

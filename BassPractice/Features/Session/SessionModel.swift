@@ -244,8 +244,11 @@ final class SessionModel {
         guard let recordingController, let files else { errorMessage = "Recording storage is unavailable."; return }
         do {
             if case .recording = await recordingController.recordingState {
-                _ = try await recordingController.stopRecording()
+                let recording = try await recordingController.stopRecording()
                 scheduleAutosave()
+                // A playback failure must not discard a successfully captured take.
+                do { try await playbackController?.play(recording) }
+                catch { errorMessage = error.message }
             }
             else {
                 try await persistSnapshot(allowNameFallback: true)

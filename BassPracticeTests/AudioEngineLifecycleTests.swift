@@ -675,7 +675,7 @@ private enum Fixtures {
     static let sessionActivationCommands: [TestDoubles.Command] = [
         .sessionConfigure,
         .sessionPreferredSampleRate(48_000),
-        .sessionPreferredBufferDuration(0.00533),
+        .sessionPreferredBufferDuration(0),
         .sessionActivate
     ]
 

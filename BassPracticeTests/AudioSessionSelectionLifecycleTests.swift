@@ -267,7 +267,7 @@ private enum Fixtures {
     static let activationCommands: [TestDoubles.AudioSessionBackend.Command] = [
         .configureForMeasurement,
         .setPreferredSampleRate(48_000),
-        .setPreferredIOBufferDuration(0.00533),
+        .setPreferredIOBufferDuration(0),
         .setActive(true, notifyOthers: false)
     ]
     static let selectionFailureCases = [
