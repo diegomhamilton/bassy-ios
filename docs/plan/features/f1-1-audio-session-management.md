@@ -13,6 +13,10 @@ tags:
 
 [[../releases/v0-1|← V0.1]] · [[../implementation-plan|Plan index]]
 
+## Current session policy and review gate
+
+Practice uses `.playAndRecord`, `.default`, `.defaultToSpeaker`, system-negotiated I/O buffer duration and a receiver-only override after activation. User confirmed built-in speaker playback; connected outputs must stay eligible. Forced buffer duration worsened periodic input gaps and must not be reintroduced without physical comparisons. [[2026-10-10-recording-quality-and-monitoring|Findings]] · [[../reference/audio-regression-prevention|Regression checklist]]. External interface/headphone, reconnection and recovery review remain pending.
+
 ## Task PR checklist
 
 - [x] [[#Task PR F1.1.1 — AVAudioSession abstraction|F1.1.1 — AVAudioSession abstraction]]
