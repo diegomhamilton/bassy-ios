@@ -18,6 +18,14 @@ protocol InputProfileRepository: Sendable {
     func delete(id: UUID) async throws(InputProfileRepositoryError)
 }
 
+/// Keeps built-in tones usable while surfacing a production storage-location failure.
+struct UnavailableInputProfileRepository: InputProfileRepository {
+    let failure: InputProfileRepositoryError
+    func profiles() async throws(InputProfileRepositoryError) -> [InputProfile] { throw failure }
+    func save(_ profile: InputProfile) async throws(InputProfileRepositoryError) { throw failure }
+    func delete(id: UUID) async throws(InputProfileRepositoryError) { throw failure }
+}
+
 /// Serializes custom-profile mutations. A failed read or write never replaces the existing store.
 actor FileInputProfileRepository: InputProfileRepository {
     private let fileURL: URL
