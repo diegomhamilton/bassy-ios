@@ -3,7 +3,7 @@ title: F1.1 — Audio Session Management
 feature: F1.1
 version: V0.1
 phase: "Phase 1 — Audio Hardware Foundation"
-status: proposed
+status: awaiting-hardware-review
 tags:
   - feature-pr
   - v0-1
@@ -12,6 +12,10 @@ tags:
 # F1.1 — Audio Session Management
 
 [[../releases/v0-1|← V0.1]] · [[../implementation-plan|Plan index]]
+
+## Current session policy and review gate
+
+Practice uses `.playAndRecord`, `.default`, `.defaultToSpeaker`, system-negotiated I/O buffer duration and a receiver-only override after activation. User confirmed built-in speaker playback; connected outputs must stay eligible. Forced buffer duration worsened periodic input gaps and must not be reintroduced without physical comparisons. [[2026-10-10-recording-quality-and-monitoring|Findings]] · [[../reference/audio-regression-prevention|Regression checklist]]. External interface/headphone, reconnection and recovery review remain pending.
 
 ## Task PR checklist
 
@@ -97,5 +101,16 @@ Handle:
 ## Feature acceptance criteria
 
 Connecting or disconnecting an interface updates the app without restarting it.
+
+## Implementation evidence
+
+- Task PR F1.1.1: [#2](https://github.com/diegomhamilton/bassy-ios/pull/2), commit `b03399f`.
+- Task PR F1.1.2: [#3](https://github.com/diegomhamilton/bassy-ios/pull/3), commit `017dd90`.
+- Task PR F1.1.3: [#4](https://github.com/diegomhamilton/bassy-ios/pull/4), commit `bf1a14b`.
+- Task PR F1.1.4: [#5](https://github.com/diegomhamilton/bassy-ios/pull/5), commit `1870999`.
+- Direct Xcode checkpoint: complete scheme passed with 24 logical tests and 42 generated cases on iPhone 17 Pro / iOS 26.2.
+- Simulator launch evidence: [[../../snapshots/2026-10-04_F1-1_audio-session-management/README|F1.1 checkpoint]].
+- XcodeBuildMCP: blocked because the integration was not exposed in the validation task; direct-tool evidence remains provisional.
+- Remaining gate: physical Cube Baby, microphone, output-route, interruption, and reconnect validation after F1.2 provides monitoring controls.
 
 ---

@@ -1,0 +1,22 @@
+Feature: F1.1 Audio Session Management
+Reviewed commit: 18709996fe8c7f5bb824ce433128f70656d24fdb
+Scheme: BassPractice
+Destination: iPhone 17 Pro (iOS 26.2)
+Tool: xcodebuild (XcodeBuildMCP unavailable)
+DerivedData: /tmp/BassPracticeF11ValidationDerivedData
+Result: TEST SUCCEEDED
+
+Logical tests: 24
+Generated test cases: 42
+Failures: 0
+Skipped: 0
+
+Result bundle:
+/tmp/BassPracticeF11ValidationDerivedData/Logs/Test/Test-BassPractice-2026.10.04_09-32-36--0300.xcresult
+
+Suites:
+- AppDependenciesTests
+- AudioControlActorTests
+- AudioRouteObservationTests
+- AudioInputDiscoveryTests
+- AudioSessionSelectionLifecycleTests
