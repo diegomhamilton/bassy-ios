@@ -36,6 +36,7 @@ Each versioned release file contains checked-by-default feature scope. Uncheck a
 
 ## Traceability
 
+- [[features/f0-2-simplified-practice-ui|F0.2 — Simplified Practice UI]] — added after navigation exploration; prioritize before further V0.1 features.
 - [[archive/implementation-plan-full|Archived full plan]] — preserved source before splitting.
 - [[../prompts/codex-kickoff|Initial Codex session guideline]]
 - [[../snapshots/README|Human-checkpoint snapshot conventions]]
