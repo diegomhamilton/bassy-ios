@@ -17,3 +17,5 @@ The already-tested app installed/launched via MCP after confirmed simulator boot
 ![Tone initial state](01-tone.jpg)
 
 Physical listening, actual interface routes, latency and uninterrupted profile changes remain human hardware gates. Recording/playback implementation follows this checkpoint; V0.1 is not complete.
+
+CI PR #18 initially failed without a diagnostic cause in the retained text log; no xcresult artifact was available. One rerun of the same head passed. PR #19, including these tests, also passed. No test assertions were suppressed.

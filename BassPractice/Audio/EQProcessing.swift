@@ -62,6 +62,7 @@ final class NativeEQProcessor: NativeInstrumentProcessor {
             nativeBand.bandwidth = NativeEQLimits.bandwidth(q: band.q)
             nativeBand.bypass = !band.enabled
         }
-        node.bypass = configuration.bypassed
+        // A flat chain needs no audio-unit processing, including empty profiles.
+        node.bypass = configuration.bypassed || !configuration.bands.contains { $0.enabled && $0.gainDecibels != 0 }
     }
 }

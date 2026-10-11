@@ -120,7 +120,7 @@ private enum Fixtures {
     static let activationCommands: [TestDoubles.AudioSessionBackend.Command] = [
         .configureForMeasurement,
         .setPreferredSampleRate(48_000),
-        .setPreferredIOBufferDuration(0.00533),
+        .setPreferredIOBufferDuration(0),
         .setActive(true, notifyOthers: false)
     ]
 
@@ -130,7 +130,7 @@ private enum Fixtures {
 
     static let inactiveSnapshot = AudioSessionSnapshot(
         requestedSampleRate: 48_000,
-        requestedIOBufferDuration: 0.00533,
+        requestedIOBufferDuration: 0,
         actualSampleRate: nil,
         actualIOBufferDuration: nil,
         isActive: false
@@ -138,7 +138,7 @@ private enum Fixtures {
 
     static let activeSnapshot = AudioSessionSnapshot(
         requestedSampleRate: 48_000,
-        requestedIOBufferDuration: 0.00533,
+        requestedIOBufferDuration: 0,
         actualSampleRate: negotiatedSampleRate,
         actualIOBufferDuration: negotiatedIOBufferDuration,
         isActive: true
@@ -146,7 +146,7 @@ private enum Fixtures {
 
     static let deactivatedSnapshot = AudioSessionSnapshot(
         requestedSampleRate: 48_000,
-        requestedIOBufferDuration: 0.00533,
+        requestedIOBufferDuration: 0,
         actualSampleRate: negotiatedSampleRate,
         actualIOBufferDuration: negotiatedIOBufferDuration,
         isActive: false
@@ -168,11 +168,11 @@ private enum Fixtures {
         ),
         ActivationFailureCase(
             operation: .setPreferredIOBufferDuration,
-            expectedError: .preferredIOBufferDurationFailed(requested: 0.00533),
+            expectedError: .preferredIOBufferDurationFailed(requested: 0),
             expectedCommands: [
                 .configureForMeasurement,
                 .setPreferredSampleRate(48_000),
-                .setPreferredIOBufferDuration(0.00533)
+                .setPreferredIOBufferDuration(0)
             ]
         ),
         ActivationFailureCase(
