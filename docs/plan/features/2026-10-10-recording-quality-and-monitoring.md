@@ -1,6 +1,6 @@
 ---
 title: Recording quality and default looping — verified implementation
-status: review-pending
+status: hardware-review-partial
 tags: [audio, regression-prevention, v0-1, v0-2]
 ---
 
@@ -10,7 +10,7 @@ tags: [audio, regression-prevention, v0-1, v0-2]
 
 ## Current state
 
-The user confirmed clear voice recording ("now it sounds great") and then confirmed both automatic and saved-take looping work ("both work"). Implemented and physically tested with the built-in iPhone microphone and speaker. PR review remains pending. This does not certify external-interface capture, headphone reconnection, monitoring latency, non-neutral effects or the entire V0.2 release.
+The user confirmed clear voice recording ("now it sounds great") and then confirmed both automatic and saved-take looping work ("both work"). Implemented and physically tested with the built-in iPhone microphone and speaker. The fixes are merged into the consolidated development baseline. This does not certify external-interface capture, headphone reconnection, monitoring latency, non-neutral effects or the entire V0.2 release.
 
 Practice uses Record Loop → Finish & Loop → Stop Loop → Play Loop. Finishing establishes the loop length and automatically repeats the take. Record New Loop stops playback, retains older takes and starts capture. Saved takes on Practice and Recordings repeat by default. Monitor Input lives independently in Audio Settings; built-in mic/speaker monitoring retains confirmation and conservative volume. Backgrounding, Stop, replacement, session switches, interruptions and route rebuilds cancel playback. Successful capture schedules saving before playback; a playback failure retains the take and save failures remain visible/retryable.
 
@@ -47,4 +47,6 @@ The underlying engine/system-input interaction is not fully explained. The nativ
 
 See [[../reference/audio-regression-prevention|Audio regression prevention]] for the cross-feature review checklist. Existing damaged captures are not repaired by these changes.
 
-Final PR cleanup checkpoint: **142 logical / 263 expanded cases passed, zero failures/skips**, after removing raw diagnostic taps/counters. Result `/tmp/BassyLoopPR-final.xcresult`; log `/tmp/BassyLoopPR-final.log`; same Xcode 26.2 simulator and DerivedData. Local signing/project changes and unrelated user guide/backup files are excluded from the PR. The PR stacks on simplified UI PR #23.
+Final PR cleanup checkpoint: **142 logical / 263 expanded cases passed, zero failures/skips**, after removing raw diagnostic taps/counters. Result `/tmp/BassyLoopPR-final.xcresult`; log `/tmp/BassyLoopPR-final.log`; same Xcode 26.2 simulator and DerivedData. Local signing/project changes and unrelated user guide/backup files are excluded from the PR. PR #24 and its simplified UI dependency #23 are merged; the remaining prior stack is consolidated into `develop`.
+
+Merged-baseline checkpoint: the prior PR stack is consolidated into `develop`; app/test sources match `92486d1`. XcodeBuildMCP validation now succeeds with the configured session: **142 logical / 263 expanded cases passed, zero failures/skips**. This is newer evidence than the earlier direct-tool fallback. See [develop handoff](../../snapshots/2026-10-10_develop-baseline/README.md). No new physical claims are added by consolidation.

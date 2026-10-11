@@ -14,13 +14,23 @@ An Obsidian-ready project vault for a native iOS practice and recording app for 
 
 ## Current implementation
 
-The native SwiftUI app has Practice and Recordings tabs. Practice offers recording,
-live monitoring and the latest take; Tone opens from its toolbar. Recordings lists
+The native SwiftUI app has Practice and Recordings tabs. Practice offers Record Loop,
+Finish & Loop, Stop Loop and Play Loop; finished and saved takes repeat by default.
+Input monitoring lives in Audio Settings; Tone opens from the toolbar. Recordings lists
 the current session's takes and opens saved workspaces through Sessions. Audio
 Settings and Diagnostics hold advanced controls. See
 [F0.2 — Simplified Practice UI](docs/plan/features/f0-2-simplified-practice-ui.md)
 for review status and physical validation still required. Open
 `BassPractice.xcodeproj` and run the `BassPractice` scheme on an iOS 17 or newer simulator.
+
+## Development baseline
+
+`develop` contains the complete merged stack, including the clear built-in voice capture,
+speaker routing, default looping and audio regression safeguards. Built-in mic/speaker
+voice and looping are user-confirmed. Remaining hardware gates and V0.2 scope are
+tracked in [the current plan](docs/plan/features/2026-10-10-recording-quality-and-monitoring.md).
+CI runs on pushes to `main` and `develop` and on pull requests; tests run without
+parallel simulator clones.
 
 ## Start here
 
@@ -37,7 +47,9 @@ The app begins as a reliable practice and recording tool: select an input and in
 
 ## Working agreement
 
-Implementation is delivered as small Task PRs stacked into Feature PRs. Use the repository's `$ios-feature-validation` skill after implementation. A human-review checkpoint is ready only after the required validation route has built and tested the app, launched the simulator, captured verified screens, and documented the evidence under `docs/snapshots/`.
+Continue development from `develop`, the consolidated default branch. Create small
+feature branches from it and target PRs back to `develop`; prefer squash merges.
+The prior open Task/Feature PR stack was consolidated on 2026-10-10. Use the repository's `$ios-feature-validation` skill after implementation. A human-review checkpoint is ready only after the required validation route has built and tested the app, launched the simulator, captured verified screens, and documented the evidence under `docs/snapshots/`.
 
 > [!important]
 > Open this folder itself as the Obsidian vault. Keep implementation decisions, agent prompts, and review evidence linked from this home note.

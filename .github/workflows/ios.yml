@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - develop
 
 jobs:
   build-and-test:
@@ -35,6 +36,7 @@ jobs:
           xcodebuild \
             -project BassPractice.xcodeproj \
             -scheme BassPractice \
+            -parallel-testing-enabled NO \
             -destination "platform=iOS Simulator,id=$BASSY_CI_SIMULATOR_ID" \
             -derivedDataPath "$RUNNER_TEMP/BassPracticeDerivedData" \
             -resultBundlePath "$RUNNER_TEMP/BassPractice.xcresult" \

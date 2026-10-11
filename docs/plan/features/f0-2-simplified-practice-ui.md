@@ -3,7 +3,7 @@ title: F0.2 — Simplified Practice UI
 feature: F0.2
 version: V0.1
 phase: "Phase 0 — Usability"
-status: review-pending
+status: hardware-review-partial
 tags: [feature-pr, v0-1, usability]
 ---
 
@@ -39,7 +39,7 @@ Make the next practice action available in one or two taps without searching a l
 
 Stacks on F7 session persistence/Library (PR #22). Uses the existing audio graph and repository. Speaker routing and neutral built-in voice capture are fixed and physically confirmed; see [[2026-10-10-recording-quality-and-monitoring|audio findings and regression safeguards]]. Playback still uses the input-capable engine and therefore requires microphone permission. Single-take playback loops by default. No pause/seek, shared transport, multi-track loops, overdub, imported tracks or global recording search.
 
-Validation and screenshots: [F0.2 checkpoint](../../snapshots/2026-10-05_F0-2_simplified-practice-ui/README.md). Implementation remains review-pending until the PR and physical checks are reviewed.
+Validation and screenshots: [F0.2 checkpoint](../../snapshots/2026-10-05_F0-2_simplified-practice-ui/README.md). Implementation is merged. Built-in mic/speaker voice and looping are physically confirmed; remaining interface/headphone, lifecycle and accessibility checks are pending.
 
 ## Current physical review
 

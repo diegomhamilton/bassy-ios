@@ -47,3 +47,7 @@ Each versioned release file contains checked-by-default feature scope. Uncheck a
 ## Verified audio checkpoint — 2026-10-10
 
 Built-in mic/speaker voice quality and default single-take looping confirmed by the user. [[features/2026-10-10-recording-quality-and-monitoring|Current state and evidence]] · [[reference/audio-regression-prevention|Code/test safeguards]]. [[features/f9-1-single-loop-recording|F9.1]] is partially implemented; V0.2 multi-track, overdub and alignment remain proposed.
+
+## Consolidated development baseline
+
+On 2026-10-10, all remaining open PRs (#1, #3–#22) were squash-merged in dependency order. PRs #23/#24 were already merged. `develop` is the single default starting branch for continued work; new feature PRs target it and prefer squash merging. `main` retains the combined integration baseline. This consolidates Git delivery; it does not close unverified hardware gates or complete the remaining V0.2 features. CI covers pushes to both branches and uses serial simulator tests to avoid parallel-clone preparation failures.
