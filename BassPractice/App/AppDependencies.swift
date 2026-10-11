@@ -13,6 +13,10 @@ struct AppDependencies {
         let profiles: any InputProfileRepository
         do { profiles = try FileInputProfileRepository.live() }
         catch { profiles = UnavailableInputProfileRepository(failure: error) }
+        let files = LocalAudioFileStore()
+        let sessions: any SessionRepository
+        if let root = files.rootDirectory { sessions = FileSessionRepository(rootDirectory: root) }
+        else { sessions = UnavailableSessionRepository() }
         let audioControl = AudioControlActor(
             backend: SystemAudioSessionBackend(),
             engineBackend: SystemAudioEngineBackend()
@@ -22,8 +26,8 @@ struct AppDependencies {
             audioEngine: audioControl,
             gainController: audioControl,
             profileRepository: profiles,
-            sessionRepository: InMemorySessionRepository(),
-            audioFileStore: LocalAudioFileStore(),
+            sessionRepository: sessions,
+            audioFileStore: files,
             logger: AppLogger()
         )
     }

@@ -42,8 +42,9 @@ enum EQDefaults {
 }
 
 /// Fixed capacity permits live changes without rebuilding the audio graph.
-final class NativeEQProcessor {
+final class NativeEQProcessor: NativeInstrumentProcessor {
     let node = AVAudioUnitEQ(numberOfBands: NativeEQLimits.maximumBands)
+    var audioNode: AVAudioNode { node }
 
     func apply(_ configuration: EQConfiguration, sampleRate: Double) throws(ToneProcessingError) {
         try NativeEQLimits.validate(configuration, sampleRate: sampleRate)
@@ -61,6 +62,7 @@ final class NativeEQProcessor {
             nativeBand.bandwidth = NativeEQLimits.bandwidth(q: band.q)
             nativeBand.bypass = !band.enabled
         }
-        node.bypass = configuration.bypassed
+        // A flat chain needs no audio-unit processing, including empty profiles.
+        node.bypass = configuration.bypassed || !configuration.bands.contains { $0.enabled && $0.gainDecibels != 0 }
     }
 }
