@@ -38,6 +38,7 @@ final class NativeGainProcessor: NativeInstrumentProcessor {
     func apply(_ configuration: GainConfiguration) throws(GainProcessingError) {
         try NativeGainLimits.validate(configuration, stage: stage)
         node.globalGain = configuration.decibels
-        node.bypass = configuration.bypassed
+        // Do not render an EQ audio unit for an identity gain operation.
+        node.bypass = configuration.bypassed || configuration.decibels == 0
     }
 }
